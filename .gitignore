@@ -1,0 +1,17 @@
+*
+!.gitignore
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!config.example.json
+!gaspoll.bat
+!src/
+!src/bench-9router.js
+!src/cli.js
+!src/lib.js
+!src/paging.js
+!src/show-results.js
+!src/test-9router.js
+!src/ui-preview.js
+!src/ui.js
