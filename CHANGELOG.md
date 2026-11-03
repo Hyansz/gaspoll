@@ -1,5 +1,10 @@
 ﻿# Changelog
 
+## [1.2.3] - 2026-11-03
+- Perbaikan: Header ringkas (perbaikan garis ganda, separator yatim, dan awalan 'v' pada versi).
+- Perbaikan: Banner penuh selalu tampil pada terminal tinggi (rows >= 30), menghapus aturan render pertama ringkas.
+- Perbaikan: `gaspoll.bat` tidak lagi memaksa `GASPOLL_UNICODE=1` agar CMD lama mendeteksi ASCII secara otomatis.
+
 ## [1.2.2] - 2026-11-03
 - Perbaikan: Tes provider dan Jalankan semua gagal dengan "s is not defined" saat menyusun combo; pesan kegagalan membedakan tes yang berhasil dari combo yang gagal.
 

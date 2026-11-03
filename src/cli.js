@@ -650,7 +650,6 @@ async function main() {
     try { L.saveConfig(cfg); } catch {}
   }
 
-  let isFirst = true;
   for (;;) {
     const alive = await L.checkRouter(cfg, 2500);
     const t = readJson('combo-auto-combo.json');
@@ -662,8 +661,7 @@ async function main() {
       t,
       b,
     };
-    const lines = UI.renderMenu(data, { version: pkg.version, compact: !isFirst });
-    isFirst = false;
+    const lines = UI.renderMenu(data, { version: pkg.version });
     lines.slice(0, lines.length - 1).forEach((ln) => L.line(ln));
     const ans = await ask(lines[lines.length - 1]);
     if (ans === null) break;

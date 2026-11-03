@@ -4,7 +4,7 @@
 
 **Uji, bandingkan, dan rangkai combo model terbaik untuk 9Router, langsung dari terminal.**
 
-![Versi](https://img.shields.io/badge/versi-1.2.2-blue)  
+![Versi](https://img.shields.io/badge/versi-1.2.3-blue)  
 ![Lisensi: MIT](https://img.shields.io/badge/lisensi-MIT-green)  
 ![Node.js](https://img.shields.io/badge/Node.js-LTS-339933?logo=node.js&logoColor=white)  
 ![Platform](https://img.shields.io/badge/diuji%20di-Windows-0078D6?logo=windows&logoColor=white)  
@@ -109,7 +109,7 @@ Tekan `Ctrl+C` kapan saja untuk menghentikan proses yang sedang berjalan.
 
 ### Tampilan terminal
 
-CMD bawaan Windows menampilkan mode ASCII, sedangkan Windows Terminal menampilkan tampilan Unicode penuh. Kamu bisa memaksa salah satunya:
+CMD bawaan Windows menampilkan mode ASCII, sedangkan Windows Terminal menampilkan tampilan Unicode penuh. CMD lama = ASCII otomatis; Windows Terminal = Unicode otomatis; paksa dengan --unicode atau GASPOLL_UNICODE=1. Kamu bisa memaksa salah satunya:
 
 ```bash
 node src/cli.js --ascii

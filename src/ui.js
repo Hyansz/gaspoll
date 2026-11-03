@@ -655,9 +655,21 @@ function renderMenu(data, opts = {}) {
   const w = opts.width || getTermWidth();
   const twoCol = w >= 76;
   const m = LAYOUT.margin, c2 = LAYOUT.col2Start;
-  const compact = typeof opts.compact !== 'undefined' ? opts.compact : (process.stdout && process.stdout.rows && process.stdout.rows < 30) || process.env.GASPOLL_COMPACT === '1';
+  const rows = process.stdout && process.stdout.rows ? process.stdout.rows : 40;
+  const envCompact = process.env.GASPOLL_COMPACT === '1';
   const forceCompact = process.env.GASPOLL_COMPACT === '0';
-  const useCompact = forceCompact ? false : compact;
+  let useCompact = false;
+  if (typeof opts.compact !== 'undefined') {
+    useCompact = opts.compact;
+  } else if (envCompact) {
+    useCompact = true;
+  } else if (forceCompact) {
+    useCompact = false;
+  } else if (rows < 30 || w < 64) {
+    useCompact = true;
+  } else {
+    useCompact = false;
+  }
 
   const smoke = smokeFor(w);
   const bw = blockWidth(w, !!smoke);
@@ -665,16 +677,21 @@ function renderMenu(data, opts = {}) {
   const dashLine = ' '.repeat(m) + c.border(dash.repeat(Math.max(10, bw - m)));
 
   if (useCompact) {
-    const headerMid = s.mid;
-    const versionStr = String(opts.version || getVersion()).replace(/^v/, '');
-    const tag = `Tes provider ${headerMid} Benchmark coding ${headerMid} Susun combo`;
-    const maxW = 76 - m;
+    const versionRaw = String(opts.version || getVersion());
+    const versionStr = versionRaw.startsWith('v') ? versionRaw : 'v' + versionRaw;
+    const tag = `Tes provider ${s.mid} Benchmark coding ${s.mid} Susun combo`;
+    const maxW = Math.max(10, bw - m);
     const tagVW = visualWidth(tag);
     const verVW = visualWidth(versionStr);
-    const gap = Math.max(0, maxW - tagVW - verVW);
+    const totalNeed = tagVW + 1 + verVW;
     out.push('  ' + c.whiteBold('GASPOLL'));
-    out.push(' ' + c.gray(' ' + headerMid + ' ' + tag) + ' '.repeat(gap) + c.gray(versionStr));
-    out.push(dashLine);
+    if (totalNeed > maxW) {
+      const tagTrunc = tag.slice(0, Math.max(0, maxW));
+      out.push(' '.repeat(m) + c.gray(tagTrunc));
+    } else {
+      const gap = Math.max(0, maxW - tagVW - verVW);
+      out.push(' '.repeat(m) + c.gray(tag) + ' '.repeat(gap) + c.gray(versionStr));
+    }
   } else {
     // --- banner: 1 baris kosong, banner (solid/classic atau satu baris bingkai), 1 baris kosong
     out.push('');

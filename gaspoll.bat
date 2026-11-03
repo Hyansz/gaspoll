@@ -2,7 +2,6 @@
 setlocal EnableExtensions
 chcp 65001 >nul
 title GASPOLL
-set GASPOLL_UNICODE=1
 cd /d "%~dp0"
 
 where node >nul 2>&1
