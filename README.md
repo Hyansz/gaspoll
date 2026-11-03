@@ -4,7 +4,7 @@
 
 **Uji, bandingkan, dan rangkai combo model terbaik untuk 9Router, langsung dari terminal.**
 
-![Versi](https://img.shields.io/badge/versi-1.2.1-blue)  
+![Versi](https://img.shields.io/badge/versi-1.2.2-blue)  
 ![Lisensi: MIT](https://img.shields.io/badge/lisensi-MIT-green)  
 ![Node.js](https://img.shields.io/badge/Node.js-LTS-339933?logo=node.js&logoColor=white)  
 ![Platform](https://img.shields.io/badge/diuji%20di-Windows-0078D6?logo=windows&logoColor=white)  

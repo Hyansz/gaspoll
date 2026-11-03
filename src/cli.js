@@ -232,7 +232,12 @@ async function finishAction(actionName, code, startTime) {
           }
         } catch {}
       }
-      summaryText = failReason;
+      const lr = readJson('last-run.json');
+      if (lr && lr.passed > 0 && actionName === 'Test provider') {
+        summaryText = `Tes selesai (${lr.passed} lolos), tetapi penyusunan combo gagal: ${failReason}. Benchmark dihentikan.`;
+      } else {
+        summaryText = failReason;
+      }
     }
   }
 
@@ -301,7 +306,23 @@ async function actionBoth() {
   console.log(col.bold('\nLANGKAH 1 dari 2: TEST PROVIDER'));
   let code = await runStep(TEST, TEST_ARGS);
   if (code !== 0) {
-    L.line(col.red('  Test gagal total atau tidak ada model lolos, benchmark dihentikan.'));
+    const lr = readJson('last-run.json');
+    if (lr && lr.passed > 0) {
+      let failReason = 'error';
+      const log = L.lastLogPath();
+      if (log && fs.existsSync(log)) {
+        try {
+          const content = fs.readFileSync(log, 'utf8');
+          const lines = content.split(/\r?\n/).filter(l => l.includes('[!]') || l.includes('GAGAL') || l.includes('Error'));
+          if (lines.length > 0) {
+            failReason = lines[lines.length - 1].replace(/^#\s*/, '').trim().slice(0, 50);
+          }
+        } catch {}
+      }
+      L.line(col.red(`  Tes selesai (${lr.passed} lolos), tetapi penyusunan combo gagal: ${failReason}. Benchmark dihentikan.`));
+    } else {
+      L.line(col.red('  Test gagal total atau tidak ada model lolos, benchmark dihentikan.'));
+    }
     await finishAction('Jalankan semua', code, t0);
     return;
   }

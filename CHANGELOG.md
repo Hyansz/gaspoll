@@ -1,5 +1,8 @@
 ﻿# Changelog
 
+## [1.2.2] - 2026-11-03
+- Perbaikan: Tes provider dan Jalankan semua gagal dengan "s is not defined" saat menyusun combo; pesan kegagalan membedakan tes yang berhasil dari combo yang gagal.
+
 ## [1.2.1] - 2026-11-03
 - Menu: banner penuh hanya di layar pertama dan header ringkas untuk terminal pendek (GASPOLL_COMPACT).
 - Blok status lebih jelas: combo belum dibuat, API key disamarkan (sk-c****c181) atau belum diatur, tes/bench terakhir.

@@ -1,6 +1,6 @@
 {
   "name": "9router-tools",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Automated testing, benchmarking, and combo management for 9Router",
   "main": "src/cli.js",
   "scripts": {

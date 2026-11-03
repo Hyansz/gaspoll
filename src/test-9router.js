@@ -221,6 +221,7 @@ function writeLastRun({ ok, passed, failed, duration, combo, comboApplied }) {
 }
 
 async function main() {
+  const s = UI.sym();
   L.installCrashHandlers();
   if (has('help')) {
     const src = fs.readFileSync(__filename, 'utf8');
@@ -380,9 +381,11 @@ async function main() {
     const auth = results.filter((r) => r.status === 401 || r.status === 403).length;
     if (auth > results.length / 2) L.line(col.red('Hampir semua ditolak 401/403: API key salah. Ganti lewat menu [7].'));
     L.line(col.red('Tidak ada model yang lolos, combo tidak dibuat.'));
+    writeLastRun({ ok: false, passed: 0, failed: failed.length, duration: totalMs, combo: null, comboApplied: 0 });
     process.exitCode = 1;
     return;
   }
+  writeLastRun({ ok: false, passed: passed.length, failed: failed.length, duration: totalMs, combo: COMBO_NAME, comboApplied: 0 });
   const pool = INCLUDE_WEAK ? passed : passed.filter((r) => r.smart);
   if (!pool.length) {
     L.line(col.red('Semua yang lolos ternyata lemah (jawaban hitungan salah).'));
