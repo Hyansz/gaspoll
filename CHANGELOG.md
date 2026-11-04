@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## [1.2.4] - 2026-11-04
+- Perbaikan: `actionSettings()` dan menu opsi `[5]` (Buka folder hasil) di `src/cli.js` mendefinisikan `s` dengan benar sehingga tidak crash 's is not defined'.
+- Perbaikan: `src/bench-9router.js` menambahkan `require('path')` agar `writeLastRunBench` dapat menulis `last-run.json` tanpa error 'path is not defined'.
+
 ## [1.2.3] - 2026-11-03
 - Perbaikan: Header ringkas (perbaikan garis ganda, separator yatim, dan awalan 'v' pada versi).
 - Perbaikan: Banner penuh selalu tampil pada terminal tinggi (rows >= 30), menghapus aturan render pertama ringkas.

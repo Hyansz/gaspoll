@@ -553,6 +553,7 @@ async function openLog() {
 
 // ---------------------------------------------------------------- layar Pengaturan [7]
 async function actionSettings() {
+  const s = UI.sym();
   L.clearScreen();
   L.line('');
   L.line('  ' + UI.c.whiteBold('PENGATURAN'));
@@ -610,7 +611,6 @@ async function actionSettings() {
 
   try {
     L.saveConfig(cfg);
-    const s = UI.sym();
     L.line(`  ${s.success} ${UI.c.whiteBold('Tersimpan di config.json')}`);
     L.line(`  ${UI.c.gray('Alamat    ')} ${UI.c.white(cfg.baseUrl)}`);
     L.line(`  ${UI.c.gray('API key   ')} ${UI.c.white(cfg.apiKey ? L.maskKey(cfg.apiKey) : '(kosong)')}`);
@@ -674,6 +674,7 @@ async function main() {
     else if (k === '3') await actionBoth();
     else if (k === '4') await actionShow();
     else if (k === '5') {
+      const s = UI.sym();
       L.clearScreen();
       L.line(`  Membuka ${L.RESULTS}`);
       L.openPath(L.RESULTS);
