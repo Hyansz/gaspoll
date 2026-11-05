@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [18, 20, 22]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run checks
+        shell: bash
+        run: |
+          node --version
+          for f in src/*.js; do node --check "$f"; done
+          printf 'q\n' | GASPOLL_NOCLEAR=1 node src/cli.js
+          printf 'q\n' | GASPOLL_NOCLEAR=1 GASPOLL_ASCII=1 node src/cli.js
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            printf 'q\n' | GASPOLL_NOCLEAR=1 sh gaspoll.sh
+          fi

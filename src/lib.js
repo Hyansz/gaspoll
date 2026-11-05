@@ -267,9 +267,6 @@ function copyText(text) {
   if (process.env.GASPOLL_CLIP_STUB) {
     try { require('fs').writeFileSync(process.env.GASPOLL_CLIP_STUB, String(text), 'utf8'); return Promise.resolve(true); } catch { return Promise.resolve(false); }
   }
-  if (process.env.GASPOLL_CLIP_STUB) {
-    try { require('fs').writeFileSync(process.env.GASPOLL_CLIP_STUB, String(text), 'utf8'); return Promise.resolve(true); } catch { return Promise.resolve(false); }
-  }
 
   const tries = [];
   if (process.platform === 'win32') {
@@ -321,7 +318,11 @@ function copyText(text) {
 function openPath(target) {
   try {
     if (process.platform === 'win32') cp.exec(`start "" "${target}"`, { windowsHide: true });
-    else cp.spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [target], { stdio: 'ignore', detached: true }).unref();
+    else {
+      const child = cp.spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [target], { stdio: 'ignore', detached: true });
+      child.on('error', () => {});
+      child.unref();
+    }
     return true;
   } catch { return false; }
 }

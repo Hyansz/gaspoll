@@ -77,8 +77,9 @@ const supportsUnicode = () => {
       if (term && term !== 'linux' && term !== 'dumb') {
         reason = `env.TERM=${term}`;
         res = true;
-      } else if (process.platform !== 'win32' && env.LANG && /UTF-8|UTF8/i.test(env.LANG)) {
-        reason = `env.LANG=${env.LANG}`;
+      } else if (process.platform !== 'win32' && (env.LC_ALL || env.LC_CTYPE || env.LANG) && /UTF-8|UTF8/i.test(env.LC_ALL || env.LC_CTYPE || env.LANG)) {
+        const locale = env.LC_ALL || env.LC_CTYPE || env.LANG;
+        reason = `env.LC=${locale}`;
         res = true;
       } else {
         reason = 'default fallback (no terminal hint)';
@@ -888,7 +889,7 @@ module.exports = {
   supportsColor, supportsUnicode, getTermWidth, getColorDepth,
   c, sym, hr, bannerLine, renderBanner, BANNER_LINES, BANNER_ART,
   SOLID_256, SHADOW_256, bannerVariant, solidBannerLines, flatBannerLines, bannerRowCount, buildShadowGrid,
-  LAYOUT, gridLine, statusLine, tagLine,
+  LAYOUT, padTo, gridLine, statusLine, tagLine,
   renderMenu, suggestMenu, wrapLegend,
   colors, stripAnsi, visualWidth, truncate,
   box, badge, kv, bar, relativeTime, shortenReason, failureKind, FAIL_HINT,

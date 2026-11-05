@@ -2,6 +2,8 @@
 
 # GASPOLL
 
+![GASPOLL - menu utama](docs/gaspoll-menu.png)
+
 **Uji, bandingkan, dan rangkai combo model terbaik untuk 9Router, langsung dari terminal.**
 
 ![Versi](https://img.shields.io/badge/versi-1.2.3-blue)  
@@ -81,6 +83,17 @@ Lalu sesuaikan isinya (atau biarkan `gaspoll.bat` membuatkan konfigurasi bawaan 
 `config.json` dan folder `results/` sudah masuk `.gitignore`, jadi API key dan hasil ujimu tidak ikut ter-commit.
 
 ## Menjalankan
+
+Syarat: Node.js 18 atau lebih baru.
+
+- Windows (CMD): `gaspoll.bat`
+- Windows (PowerShell): `.\gaspoll.bat` (PowerShell tidak menjalankan berkas di folder saat ini tanpa `.\`)
+- Linux dan macOS: `sh gaspoll.sh`, atau `chmod +x gaspoll.sh` lalu `./gaspoll.sh` (zip dari Windows tidak membawa izin eksekusi)
+- Semua sistem: `node src/cli.js` atau `npm start`
+
+Di Linux, salin ke clipboard butuh salah satu dari `wl-copy`, `xclip`, atau `xsel`, dan membuka folder butuh `xdg-open`. Jika tidak ada, hasil tersimpan di `results/salin-log.txt` dan aplikasi tidak crash.
+
+Tampilan ASCII murni (untuk terminal lama): CMD `set GASPOLL_ASCII=1`, PowerShell `$env:GASPOLL_ASCII=1`, Linux/macOS `GASPOLL_ASCII=1 ./gaspoll.sh`. Opsi `--ascii` dan `--unicode` juga tersedia.
 
 Pastikan 9Router sudah berjalan, lalu pilih salah satu:
 

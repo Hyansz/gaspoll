@@ -1,5 +1,16 @@
 ﻿# Changelog
 
+## [1.2.5] - 2026-11-05
+- README: gambar menu, petunjuk menjalankan per sistem operasi (CMD, PowerShell, Linux, macOS), opsi tampilan terminal.
+- .gitattributes: .bat selalu CRLF dan .sh selalu LF.
+- Workflow CI (GitHub Actions) menguji Linux, macOS, dan Windows.
+- Perbaikan: menu Pengaturan [7] crash "UI.padTo is not a function" (padTo kini diekspor dari src/ui.js).
+- Tes baru: semua rujukan UI.x dan L.x harus ada di ekspor modulnya.
+- Dukungan Linux dan macOS: launcher gaspoll.sh, pembuka folder dan clipboard lintas OS.
+- Pembuka folder tidak lagi crash bila xdg-open/open tidak terpasang.
+- Deteksi UTF-8 membaca LC_ALL, LC_CTYPE, lalu LANG.
+- Tes portabilitas Linux/macOS.
+
 ## [1.2.4] - 2026-11-04
 - Perbaikan: `actionSettings()` dan menu opsi `[5]` (Buka folder hasil) di `src/cli.js` mendefinisikan `s` dengan benar sehingga tidak crash 's is not defined'.
 - Perbaikan: `src/bench-9router.js` menambahkan `require('path')` agar `writeLastRunBench` dapat menulis `last-run.json` tanpa error 'path is not defined'.
@@ -26,5 +37,5 @@
 - ASCII/Unicode: pilihan tampilan diwariskan ke proses anak; GASPOLL_ASCII / GASPOLL_UNICODE / --ascii / --unicode (src/ui.js, test/unit.test.js).
 - Perbaikan: "Cannot access 's' before initialization" di test-9router jalur ASCII (src/test-9router.js).
 - Settings: bracket sejajar; saran "tekan 7" untuk API key kosong (src/ui.js, test/unit.test.js).
-- Nama proyek diganti dari GASPOLL menjadi GASPOLL; variabel env GASPOLL_* menjadi GASPOLL_*.
+- Nama proyek menjadi GASPOLL; variabel lingkungan memakai awalan GASPOLL_.
 - Pengembangan & Pengujian: 63 tes; `npm test` lewat test/run-tests.js (guard: gagal bila results/ asli berubah); tes diisolasi lewat GASPOLL_RESULTS (folder sementara) (test/run-tests.js, test/unit.test.js, test/ui-flow.test.js).
