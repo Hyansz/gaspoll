@@ -175,7 +175,7 @@ const cmdText = (script, args) => `node ${path.join('src', path.basename(script)
 
 async function runStep(script, args) {
   console.log('');
-  L.cmdLine('Perintah setara (bisa disalin):', cmdText(script, args));
+  if (process.env.GASPOLL_VERBOSE === '1') L.cmdLine('Perintah setara (bisa disalin):', cmdText(script, args));
   const code = await runScript(script, args);
   return code;
 }

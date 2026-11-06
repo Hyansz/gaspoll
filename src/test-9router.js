@@ -41,7 +41,7 @@ const { col } = L;
 const A = L.makeArgs();
 const { has, opt, list, num } = A;
 const KNOWN = ['apply', 'create', 'name', 'max', 'priority', 'only', 'exclude', 'password', 'include-weak',
-  'skip-model', 'provider-parallel', 'per-provider', 'all-variants', 'timeout', 'concurrency', 'help'];
+  'skip-model', 'provider-parallel', 'per-provider', 'all-variants', 'timeout', 'concurrency', 'help', 'verbose', 'quiet-fail'];
 
 const cfg = L.loadConfig();
 if (opt('password', '')) cfg.password = opt('password', '');
@@ -58,6 +58,8 @@ const ONLY = list(opt('only', ''));
 const EXCLUDE = list(opt('exclude', ''));
 const ALL_VARIANTS = has('all-variants');
 const INCLUDE_WEAK = has('include-weak');
+const VERBOSE = has('verbose') || process.env.GASPOLL_VERBOSE === '1';
+const COMBO_SHOW = 10; // model combo yang dicetak ke layar (daftar lengkap ada di berkas .txt)
 const RETRY_MS = parseInt(process.env.TEST_RETRY_MS || '10000', 10);
 const RATE_RE = /\[429\]|HTTP 429|too many requests|rate.?limit/i;
 const SKIP_MODEL = new RegExp(opt('skip-model', L.SKIP_MODEL_DEFAULT), 'i');
@@ -160,6 +162,24 @@ function pickDiverse(sorted, max) {
   return out;
 }
 
+// Lebar baris untuk tabel ringkasan (maksimal 100 supaya tidak melebar di layar lebar).
+function viewWidth() {
+  const w = UI.getTermWidth ? UI.getTermWidth() : 80;
+  return Math.max(60, Math.min(Number(w) || 80, 100)) - 1;
+}
+
+// Bungkus entri "a | b | c" ke beberapa baris sesuai lebar, tanpa memotong satu entri di tengah.
+function wrapEntries(entries, width, indent) {
+  const lines = [];
+  let cur = '';
+  for (const e of entries) {
+    const next = cur ? `${cur} | ${e}` : e;
+    if (cur && indent.length + next.length > width) { lines.push(cur); cur = e; } else cur = next;
+  }
+  if (cur) lines.push(cur);
+  return lines.map((l) => indent + l);
+}
+
 function providerSummary(results, chosen) {
   const by = {};
   for (const r of results) {
@@ -175,19 +195,38 @@ function providerSummary(results, chosen) {
   const inCombo = {};
   chosen.forEach((id) => { const p = prefixOf(id); inCombo[p] = (inCombo[p] || 0) + 1; });
 
-  L.line('');
   const s = UI.sym();
-  L.line(col.cyan(col.bold('  RINGKASAN PER PROVIDER')));
-  L.line(col.dim('  ' + s.horiz.repeat(56)));
-  L.line(col.dim(`  ${L.pad('Provider', 14)} ${L.pad('Lolos', 6)} ${L.pad('Di combo', 9)} Alasan gagal`));
-  Object.entries(by)
-    .sort((a, b) => b[1].ok - a[1].ok)
-    .forEach(([p, e]) => {
-      const why = Object.entries(e.reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} x${n}`).join(', ');
+  const width = viewWidth();
+  const winners = Object.entries(by).filter(([, e]) => e.ok > 0).sort((a, b) => b[1].ok - a[1].ok);
+  const losers = Object.entries(by).filter(([, e]) => e.ok === 0).sort((a, b) => b[1].total - a[1].total);
+
+  if (winners.length) {
+    L.line('');
+    L.line(col.cyan(col.bold('  PROVIDER YANG LOLOS')));
+    L.line(col.dim('  ' + s.horiz.repeat(56)));
+    L.line(col.dim(`  ${L.pad('Provider', 14)} ${L.pad('Lolos', 6)} ${L.pad('Di combo', 9)} Alasan gagal`));
+    const room = Math.max(10, width - 34);
+    winners.forEach(([p, e]) => {
+      let why = Object.entries(e.reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} x${n}`).join(', ');
+      if (why.length > room) why = why.slice(0, room - 3) + '...';
       const frac = `${e.ok}/${e.total}`;
-      const color = e.ok === 0 ? col.red : e.ok < e.total ? col.yellow : col.green;
-      L.line(`  ${L.pad(p, 14)} ${color(L.pad(frac, 6))} ${L.pad(inCombo[p] || 0, 9)} ${col.dim(why || '')}`);
+      const color = e.ok < e.total ? col.yellow : col.green;
+      L.line(`  ${L.pad(p, 14)} ${color(L.pad(frac, 6))} ${L.pad(inCombo[p] || 0, 9)} ${col.dim(why)}`);
     });
+  }
+
+  if (losers.length) {
+    const models = losers.reduce((n, [, e]) => n + e.total, 0);
+    const entries = losers.map(([p, e]) => {
+      const top = Object.entries(e.reasons).sort((a, b) => b[1] - a[1])[0];
+      return `${p} 0/${e.total} ${top ? top[0] : 'error lain'}`;
+    });
+    L.line('');
+    L.line(col.red(col.bold(`  TIDAK ADA YANG LOLOS (${losers.length} provider, ${models} model)`)));
+    L.line(col.dim('  ' + s.horiz.repeat(56)));
+    wrapEntries(entries, width, '  ').forEach((l) => L.line(l));
+    if (process.env.GASPOLL_FROM_MENU === '1') L.line(col.dim('  Detail per alasan: Riwayat & log > Yang gagal'));
+  }
 }
 
 // ---------------------------------------------------------------- main
@@ -258,9 +297,7 @@ async function main() {
   }
 
   L.heading('TEST SEMUA PROVIDER');
-  L.line(col.dim('  Menguji semua model untuk menemukan yang paling cepat dan andal'));
-  L.line(`  Router  : ${cfg.baseUrl}`);
-  L.line(`  API key : ${L.maskKey(cfg.apiKey)}`);
+  L.line(`  Router: ${cfg.baseUrl}    API key: ${L.maskKey(cfg.apiKey)}`);
   const alive = await L.checkRouter(cfg);
   if (!alive.ok) {
     L.line(col.red(`\n[!] 9Router tidak bisa dihubungi di ${cfg.baseUrl}: ${alive.reason}`));
@@ -278,15 +315,20 @@ async function main() {
     if (SKIP_MODEL.test(id)) { skipped.push(id); return false; }
     return true;
   });
-  if (skipped.length) {
-    L.line(col.dim(`Dilewati oleh filter nama (${skipped.length}): ${skipped.slice(0, 8).join(', ')}${skipped.length > 8 ? ', ...' : ''}`));
-    L.line(col.dim('  (ubah dengan --skip-model "regex" jika ada model chat yang ikut terfilter)'));
-  }
+  let variantsDropped = 0;
   if (!ALL_VARIANTS) {
     const before = models.length;
     models = L.dropVariants(models);
-    if (before - models.length) L.line(col.dim(`${before - models.length} varian -thinking/-agentic tidak dites (pakai --all-variants untuk ikut menguji).`));
+    variantsDropped = before - models.length;
   }
+  const skipParts = [];
+  if (skipped.length) skipParts.push(`${skipped.length} model (filter nama)`);
+  if (variantsDropped) skipParts.push(`${variantsDropped} varian -thinking/-agentic`);
+  if (skipParts.length) {
+    L.line(col.dim(`  Dilewati: ${skipParts.join(', ')}.`));
+    L.line(col.dim('  Ubah dengan --skip-model "regex" atau --all-variants.'));
+  }
+  if (VERBOSE && skipped.length) L.line(col.dim(`  Dilewati filter nama: ${skipped.join(', ')}`));
   if (!models.length) {
     L.line(col.red(`\nTidak ada model untuk dites (dari ${total0} model di router).`));
     L.line('Pastikan provider sudah terhubung di dashboard, atau cek filter --only/--exclude.');
@@ -294,7 +336,7 @@ async function main() {
     return;
   }
   L.line(`\nMenguji ${models.length} model (maks ${CONCURRENCY} provider bersamaan, ${PROVIDER_PARALLEL} model per provider)...`);
-  L.line(col.dim('Ctrl+C untuk berhenti. Setiap hasil dicetak sebagai baris biasa, jadi bisa di-scroll dan di-copy.\n'));
+  L.line(col.dim('Ctrl+C untuk berhenti.\n'));
 
   const t0 = Date.now();
   let done = 0;
@@ -344,40 +386,14 @@ async function main() {
   }
 
   L.line('');
-  const s2 = UI.sym();
   const passed = results.filter((r) => r.ok);
   const failed = results.filter((r) => !r.ok);
   const totalMs = Date.now() - t0;
 
-  // Satu kotak ringkasan tunggal dengan kelompok kegagalan
-  const failureGroups = {};
-  failed.forEach((r) => {
-    const p = prefixOf(r.id) || 'unknown';
-    const classified = L.classifyFailure(r.reason);
-    const key = `${p} ${s2.mid} ${classified.label}`;
-    failureGroups[key] = (failureGroups[key] || 0) + 1;
-  });
-  const sortedFailures = Object.entries(failureGroups).sort((a, b) => b[1] - a[1]);
-
-  const summaryLines = [
-    `${s2.success} ${col.green(String(passed.length))} lolos   ${s2.fail} ${col.red(String(failed.length))} gagal   Waktu: ${L.fmtDur(totalMs)}`,
-  ];
-  if (sortedFailures.length) {
-    summaryLines.push('');
-    summaryLines.push('Ringkasan Gagal:');
-    const maxLines = 12;
-    sortedFailures.slice(0, maxLines).forEach(([k, count]) => {
-      summaryLines.push(`  ${k}: ${count}`);
-    });
-    if (sortedFailures.length > maxLines) {
-      summaryLines.push(`  +${sortedFailures.length - maxLines} kelompok lain (lihat Riwayat & log › Yang gagal)`);
-    }
-  }
-  L.line(UI.box('RINGKASAN TES', summaryLines, { borderColor: failed.length > 0 ? 'yellow' : 'green' }));
-
-  L.line(`\nSelesai dalam ${L.fmtDur(totalMs)}. ${col.green(`Lolos: ${passed.length}`)} | ${failed.length ? col.red(`Gagal: ${failed.length}`) : 'Gagal: 0'}`);
+  L.line(`  HASIL: ${col.green(`${passed.length} lolos`)}, ${failed.length ? col.red(`${failed.length} gagal`) : '0 gagal'}, waktu ${L.fmtDur(totalMs)}`);
 
   if (!passed.length) {
+    providerSummary(results, []);
     const auth = results.filter((r) => r.status === 401 || r.status === 403).length;
     if (auth > results.length / 2) L.line(col.red('Hampir semua ditolak 401/403: API key salah. Ganti lewat menu [7].'));
     L.line(col.red('Tidak ada model yang lolos, combo tidak dibuat.'));
@@ -397,13 +413,16 @@ async function main() {
   const chosen = pickDiverse(sortForCombo(candidates), MAX_MODELS).map((r) => r.id);
 
   L.line('');
-  L.line(col.cyan(col.bold(`  COMBO "${COMBO_NAME}" (urutan fallback)`)));
+  const txtFile = FILE.replace(/\.json$/, '.txt');
+  L.line(col.cyan(col.bold(`  COMBO "${COMBO_NAME}" (${chosen.length} model, urutan fallback)`)));
   L.line(col.dim('  ' + s.horiz.repeat(56)));
-  chosen.forEach((id, i) => {
+  const shown = VERBOSE ? chosen : chosen.slice(0, COMBO_SHOW);
+  shown.forEach((id, i) => {
     const p = prefixOf(id);
     const pCol = UI.colors.provider(p);
     L.line(`  ${col.dim(L.lpad(i + 1, 2))}. ${pCol(id)}`);
   });
+  if (chosen.length > shown.length) L.line(col.dim(`  ... +${chosen.length - shown.length} lainnya (daftar lengkap: ${path.basename(txtFile)})`));
   providerSummary(results, chosen);
 
   // Tampilkan model lolos yang tidak masuk combo dengan penanda redup
@@ -412,19 +431,22 @@ async function main() {
   if (notChosen.length) {
     L.line('');
     L.line(col.yellow('  Model lolos namun tidak masuk combo:'));
-    notChosen.forEach((r) => {
+    const notShown = VERBOSE ? notChosen : notChosen.slice(0, 5);
+    notShown.forEach((r) => {
       const isVariant = (r.id.includes('thinking') || r.id.includes('agentic'));
       const s3 = UI.sym();
       const note = isVariant ? `${s3.mid} varian, tidak masuk combo` : `${s3.mid} lemah, tidak masuk combo`;
       L.line(col.dim(`    - ${r.id}  ${note}`));
     });
+    if (notChosen.length > notShown.length) L.line(col.dim(`    ... +${notChosen.length - notShown.length} lainnya`));
   }
 fs.writeFileSync(FILE, JSON.stringify({ name: COMBO_NAME, models: chosen, tested_at: new Date().toISOString(), results }, null, 2));
   const txt = FILE.replace(/\.json$/, '.txt');
   fs.writeFileSync(txt, chosen.join('\n') + '\n');
   L.line('');
   L.line(`Hasil lengkap : ${FILE}`);
-  L.line(`Daftar model  : ${txt}  (satu model per baris, tinggal paste di Dashboard > Combos)`);
+  L.line(`Daftar model  : ${txt}`);
+  L.line(col.dim('                (satu model per baris, tinggal paste di Dashboard > Combos)'));
 
   if (has('create')) {
     const ok = await L.applyCombos(cfg, { [COMBO_NAME]: chosen });

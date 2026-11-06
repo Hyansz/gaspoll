@@ -453,7 +453,12 @@ async function dashboardCookie(cfg) {
       body: JSON.stringify({ password: cfg.password }),
     }, 15000);
   } catch (e) { throw new Error(`login dashboard gagal: ${e.message}`); }
-  if (!r.res.ok) throw new Error(`login dashboard gagal (HTTP ${r.res.status}), cek password di menu [7]`);
+  if (!r.res.ok) {
+    const hint = r.res.status >= 500
+      ? `login dashboard gagal (HTTP ${r.res.status} — server error di 9Router, bukan masalah password)`
+      : `login dashboard gagal (HTTP ${r.res.status}), cek password di menu [7]`;
+    throw new Error(hint);
+  }
   const sc = r.res.headers.getSetCookie ? r.res.headers.getSetCookie() : [r.res.headers.get('set-cookie')];
   return sc.filter(Boolean).map((c) => c.split(';')[0]).join('; ');
 }
@@ -532,9 +537,8 @@ async function applyCombos(cfg, tierMap) {
   let cookie = '';
   if (cfg.password) {
     try { cookie = await dashboardCookie(cfg); } catch (e) {
-      line(col.red(`[GAGAL] ${e.message}`));
-      line(col.dim('        Combo tidak dibuat. Perbaiki password lalu jalankan ulang, atau buat manual di Dashboard > Combos.'));
-      return false;
+      line(col.yellow(`[!] Login dashboard dilewati: ${e.message} (mencoba tanpa cookie)`));
+      cookie = '';
     }
   }
   let allOk = true;
