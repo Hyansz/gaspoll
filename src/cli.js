@@ -691,9 +691,8 @@ async function main() {
     else if (k === '1') await actionTest();
     else if (k === '2') await actionBench();
     else if (k === '3') await actionBoth();
-    else if (k === '4') await actionGuardian();
-    else if (k === '5') await actionShow();
-    else if (k === '6') {
+    else if (k === '4') await actionShow();
+    else if (k === '5') {
       const s = UI.sym();
       L.clearScreen();
       L.line(`  Membuka ${L.RESULTS}`);
@@ -703,8 +702,9 @@ async function main() {
       if (/^g/i.test(ans2)) await actionHistory();
       returnToMenu();
     }
-    else if (k === '7') await actionRetest();
-    else if (k === '8') await actionSettings();
+    else if (k === '6') await actionRetest();
+    else if (k === '7') await actionSettings();
+    else if (k === '8') await actionGuardian();
     else if (k === 'g' || k === 'l') await actionHistory();
     else if (k) L.line(UI.c.gray(`  Pilihan "${ans}" tidak dikenal. Ketik 1-8, g, atau q.`));
   }

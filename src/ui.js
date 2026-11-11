@@ -758,26 +758,25 @@ function renderMenu(data, opts = {}) {
   const keycap = (k) => sug.key === k ? c.keycap(k) : c.silver(`[${k}]`);
   const item = (k, label) => `  ${keycap(k)} ${c.white(label)}`;
 
-  out.push(''); // Tambahan jarak atas
   out.push(dashLine);
   // judul kolom: PROSES di kolom 2, HASIL & ALAT di col2Start
   out.push(' '.repeat(m) + c.gray('PROSES') + ' '.repeat(Math.max(0, c2 - m - visualWidth('PROSES'))) + c.gray('HASIL & ALAT'));
 
   if (twoCol) {
-    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('5', 'Lihat hasil terakhir')));
-    out.push(gridLine(item('2', 'Benchmark agent coding'), item('6', 'Buka folder hasil')));
-    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('7', 'Ulangi benchmark 1 provider')));
-    out.push(gridLine(item('4', 'Realtime bot guardian'), item('8', 'Pengaturan')));
+    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('4', 'Lihat hasil terakhir')));
+    out.push(gridLine(item('2', 'Benchmark agent coding'), item('5', 'Buka folder hasil')));
+    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('6', 'Ulangi benchmark 1 provider')));
+    out.push(gridLine(item('8', 'Realtime bot guardian'), item('7', 'Pengaturan')));
     out.push(gridLine(c.gray('[g] Riwayat & log   [q] Keluar'), ''));
   } else {
     out.push(item('1', 'Tes provider & buat combo'));
     out.push(item('2', 'Benchmark agent coding'));
     out.push(item('3', 'Tes + benchmark berurutan'));
-    out.push(item('4', 'Realtime bot guardian'));
-    out.push(item('5', 'Lihat hasil terakhir'));
-    out.push(item('6', 'Buka folder hasil'));
-    out.push(item('7', 'Ulangi benchmark 1 provider'));
-    out.push(item('8', 'Pengaturan'));
+    out.push(item('4', 'Lihat hasil terakhir'));
+    out.push(item('5', 'Buka folder hasil'));
+    out.push(item('6', 'Ulangi benchmark 1 provider'));
+    out.push(item('7', 'Pengaturan'));
+    out.push(item('8', 'Realtime bot guardian'));
     out.push(item('g', 'Riwayat & log'));
     out.push(c.gray(' '.repeat(m) + '[q] Keluar'));
   }

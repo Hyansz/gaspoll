@@ -16,6 +16,7 @@
 !.github/workflows/
 !src/bench-9router.js
 !src/cli.js
+!src/guardian.js
 !src/lib.js
 !src/paging.js
 !src/show-results.js

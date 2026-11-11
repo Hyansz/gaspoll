@@ -1,5 +1,15 @@
 ﻿# Changelog
 
+## [1.2.6] - 2026-11-11
+- Menu baru [8] Realtime bot guardian: perantara lokal (127.0.0.1:20130) di depan 9Router. Saat sebuah model kena limit, macet, atau menjawab kosong, permintaan yang sama langsung dialihkan ke model berikutnya dari combo-auto-combo.json, tanpa mengubah combo di 9Router maupun urutan di berkas.
+- Layar live berbasis teks: model yang sedang dipakai, status tiap model (sehat, tertahan, nonaktif), dan peristiwa terbaru. Tombol r (cek semua), 1 (reset), q (keluar).
+- Model bermasalah ditahan 20 detik (naik dua kali lipat sampai 300 detik) dan kembali ke posisi semula setelah 2 cek berhasil beruntun.
+- Log kegagalan results/guardian-failures.log (key disamarkan) untuk menyetel pola limit. Pola tambahan lewat --limit-pattern atau GASPOLL_GUARD_PATTERN.
+- Batasan: hanya /v1/chat/completions (gaya OpenAI). /v1/messages (Claude Code) belum didukung.
+- Perbaikan: diagnosis gagal login dashboard. Pesan kini membedakan HTTP 429 (diblokir sementara, ada waktu tunggu), 401, dan 500, menyebut sumber password dan berkas config tanpa mencetak isinya, serta menyarankan perintah --apply --name auto-combo.
+- Tes baru untuk guardian, menu [8], dan diagnosis login.
+- README ditata ulang: tabel fitur, diagram alur guardian, dan panduan pemecahan masalah login dan guardian.
+
 ## [1.2.5] - 2026-11-05
 - README: gambar menu, petunjuk menjalankan per sistem operasi (CMD, PowerShell, Linux, macOS), opsi tampilan terminal.
 - .gitattributes: .bat selalu CRLF dan .sh selalu LF.

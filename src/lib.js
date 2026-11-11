@@ -120,13 +120,15 @@ function loadConfig() {
   try {
     const cfgPath = process.env.GASPOLL_CONFIG || CONFIG_JSON;
     if (fs.existsSync(cfgPath)) {
-      Object.assign(cfg, JSON.parse(fs.readFileSync(cfgPath, 'utf8')), { source: 'config.json' });
+      Object.assign(cfg, JSON.parse(fs.readFileSync(cfgPath, 'utf8').replace(/^\uFEFF/, '')), { source: 'config.json' });
+      cfg.configFile = cfgPath;
     } else if (fs.existsSync(CONFIG_BAT)) {
       const b = parseBat(fs.readFileSync(CONFIG_BAT, 'utf8'));
       if (b.NINE_ROUTER_BASE_URL) cfg.baseUrl = b.NINE_ROUTER_BASE_URL;
       if (b.NINE_ROUTER_API_KEY) cfg.apiKey = b.NINE_ROUTER_API_KEY;
       if (b.NINE_ROUTER_PASSWORD) cfg.password = b.NINE_ROUTER_PASSWORD;
       cfg.source = 'config.bat';
+      cfg.configFile = CONFIG_BAT;
     }
   } catch (e) {
     line(col.yellow(`[!] Config rusak dan diabaikan: ${e.message}`));
@@ -134,10 +136,19 @@ function loadConfig() {
   const env = process.env;
   if (env.NINE_ROUTER_BASE_URL) cfg.baseUrl = env.NINE_ROUTER_BASE_URL;
   if (env.NINE_ROUTER_API_KEY) cfg.apiKey = env.NINE_ROUTER_API_KEY;
-  if (env.NINE_ROUTER_PASSWORD) cfg.password = env.NINE_ROUTER_PASSWORD;
+  if (env.NINE_ROUTER_PASSWORD) {
+    cfg.password = env.NINE_ROUTER_PASSWORD;
+    cfg.passwordSource = 'variabel lingkungan NINE_ROUTER_PASSWORD';
+  }
   // Normalisasi alamat (tanpa /v1, tanpa trailing slash) setelah load
   cfg.baseUrl = normalizeUrl(cfg.baseUrl);
-  if (!cfg.password) cfg.password = '123456';
+  if (cfg.password != null && typeof cfg.password !== 'string') cfg.password = String(cfg.password);
+  if (!cfg.password) {
+    cfg.password = '123456';
+    cfg.passwordSource = 'bawaan 123456 (password belum diatur)';
+  } else if (!cfg.passwordSource) {
+    cfg.passwordSource = cfg.source === 'default' ? 'bawaan' : cfg.source;
+  }
   return cfg;
 }
 
@@ -454,13 +465,33 @@ async function dashboardCookie(cfg) {
     }, 15000);
   } catch (e) { throw new Error(`login dashboard gagal: ${e.message}`); }
   if (!r.res.ok) {
-    const hint = r.res.status >= 500
-      ? `login dashboard gagal (HTTP ${r.res.status} — server error di 9Router, bukan masalah password)`
-      : `login dashboard gagal (HTTP ${r.res.status}), cek password di menu [7]`;
-    throw new Error(hint);
+    const pw = String(cfg.password || '');
+    const st = r.res.status;
+    const detail = errText(r.body, r.res);
+    const hint = st === 429
+      ? `terlalu banyak percobaan login, tunggu ${r.res.headers.get('retry-after') || 'beberapa'} detik lalu coba lagi`
+      : st >= 500
+        ? 'server error di 9Router, bukan masalah password'
+        : r.body && r.body.mustChangePassword
+          ? '9Router meminta password diganti dulu: buka dashboard di browser dan atur password'
+          : 'cek password di menu [7]';
+    const err = new Error(`login dashboard gagal (HTTP ${st}${detail && !/^HTTP \d+$/.test(detail) ? `: ${detail}` : ''}), ${hint}`);
+    err.diag = [
+      `password dari : ${cfg.passwordSource || 'config'} (${pw.length} karakter${pw !== pw.trim() ? ', ADA spasi di awal/akhir' : ''})`,
+      `berkas config : ${cfg.configFile || '(tidak ada config.json, memakai bawaan)'}`,
+      `alamat router : ${cfg.baseUrl}`,
+      'Password harus sama dengan yang dipakai login ke dashboard 9Router di browser.',
+    ];
+    throw err;
   }
   const sc = r.res.headers.getSetCookie ? r.res.headers.getSetCookie() : [r.res.headers.get('set-cookie')];
-  return sc.filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+  const cookie = sc.filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+  if (!cookie && r.body && r.body.mustChangePassword) {
+    const err = new Error('login dashboard ditolak: 9Router meminta password diganti dulu. Buka dashboard di browser, atur password, lalu isi di menu [7]');
+    err.diag = [`alamat router : ${cfg.baseUrl}`];
+    throw err;
+  }
+  return cookie;
 }
 
 async function updateCombo(cfg, h, name, models) {
@@ -538,6 +569,10 @@ async function applyCombos(cfg, tierMap) {
   if (cfg.password) {
     try { cookie = await dashboardCookie(cfg); } catch (e) {
       line(col.yellow(`[!] Login dashboard dilewati: ${e.message} (mencoba tanpa cookie)`));
+      (e.diag || []).forEach((d) => line(col.dim(`        ${d}`)));
+      if (path.basename(process.argv[1] || '') === 'test-9router.js') {
+        line(col.dim(`        Tanpa tes ulang: node ${relCmd('test-9router.js')} --apply --name ${Object.keys(tierMap)[0] || 'auto-combo'}`));
+      }
       cookie = '';
     }
   }
