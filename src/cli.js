@@ -147,17 +147,23 @@ function runScript(script, args) {
     const guard = () => {};
     process.on('SIGINT', guard);
     const uni = UI.supportsUnicode();
+    // Build env for child: preserve parent's GASPOLL_UNICODE/ASCII if already set
+    const childEnv = { ...process.env };
+    // Only set Unicode/ASCII if not already in parent env (let parent decision propagate or use default)
+    if (process.env.GASPOLL_UNICODE === undefined && process.env.GASPOLL_ASCII === undefined) {
+      // Parent didn't explicitly set Unicode mode: use parent's detection
+      childEnv.GASPOLL_UNICODE = uni ? '1' : '0';
+      childEnv.GASPOLL_ASCII = uni ? '0' : '1';
+    }
+    // Always pass these config values
+    childEnv.NINE_ROUTER_BASE_URL = cfg.baseUrl;
+    childEnv.NINE_ROUTER_API_KEY = cfg.apiKey;
+    childEnv.NINE_ROUTER_PASSWORD = cfg.password;
+    childEnv.GASPOLL_FROM_MENU = '1';
+
     const child = cp.spawn(process.execPath, [script, ...args], {
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        NINE_ROUTER_BASE_URL: cfg.baseUrl,
-        NINE_ROUTER_API_KEY: cfg.apiKey,
-        NINE_ROUTER_PASSWORD: cfg.password,
-        GASPOLL_FROM_MENU: '1',
-        GASPOLL_UNICODE: uni ? '1' : '0',
-        GASPOLL_ASCII: uni ? '0' : '1',
-      },
+      env: childEnv,
     });
     child.on('error', (e) => {
       process.removeListener('SIGINT', guard);
@@ -340,6 +346,19 @@ async function actionShow() {
   const t0 = Date.now();
   const code = await runScript(SHOW, []);
   await finishAction('Lihat hasil terakhir', code, t0);
+}
+
+// ---------------------------------------------------------------- layar Realtime bot guardian [8]
+// Layar live ada di guardian.js (perantara di depan 9Router). Menu hanya menjalankannya.
+
+const GUARD = path.join(__dirname, 'guardian.js');
+
+async function actionGuardian() {
+  L.clearScreen();
+  if (!(await ensureRouter())) { returnToMenu(); return; }
+  const t0 = Date.now();
+  const code = await runScript(GUARD, []);
+  await finishAction('Realtime bot guardian', code, t0);
 }
 
 async function actionRetest() {
@@ -672,8 +691,9 @@ async function main() {
     else if (k === '1') await actionTest();
     else if (k === '2') await actionBench();
     else if (k === '3') await actionBoth();
-    else if (k === '4') await actionShow();
-    else if (k === '5') {
+    else if (k === '4') await actionGuardian();
+    else if (k === '5') await actionShow();
+    else if (k === '6') {
       const s = UI.sym();
       L.clearScreen();
       L.line(`  Membuka ${L.RESULTS}`);
@@ -683,10 +703,10 @@ async function main() {
       if (/^g/i.test(ans2)) await actionHistory();
       returnToMenu();
     }
-    else if (k === '6') await actionRetest();
-    else if (k === '7') await actionSettings();
+    else if (k === '7') await actionRetest();
+    else if (k === '8') await actionSettings();
     else if (k === 'g' || k === 'l') await actionHistory();
-    else if (k) L.line(UI.c.gray(`  Pilihan "${ans}" tidak dikenal. Ketik 1-7, g, atau q.`));
+    else if (k) L.line(UI.c.gray(`  Pilihan "${ans}" tidak dikenal. Ketik 1-8, g, atau q.`));
   }
   L.line('  Sampai jumpa.');
 }

@@ -49,7 +49,8 @@ const getColorDepth = () => {
 };
 
 // Unicode aktif bila: GASPOLL_UNICODE=1 / --unicode, atau WT_SESSION, TERM_PROGRAM,
-// ConEmuANSI terisi, atau TERM terisi dan bukan linux/dumb, atau non-win32 + TTY.
+// ConEmuANSI terisi, atau TERM terisi dan bukan linux/dumb, atau non-win32 + TTY, atau
+// VS Code integrated terminal (detectnya via VSCODE_PID), atau TTY dengan UTF-8 capable.
 // Override: GASPOLL_ASCII=1 / --ascii memaksa ASCII.
 const supportsUnicode = () => {
   let reason = 'default_ascii';
@@ -141,7 +142,14 @@ function visualWidth(s) {
 
 // Simbol menu GASPOLL dengan fallback ASCII
 const sym = () => {
-  const uni = supportsUnicode();
+  // Call supportsUnicode() to ensure debug output is generated if GASPOLL_DEBUG_UNICODE=1
+  const unicodeSupported = supportsUnicode();
+  
+  // Default to Unicode symbols. Only use ASCII if explicitly requested via GASPOLL_ASCII=1
+  const forceAscii = process.env.GASPOLL_ASCII === '1';
+  const forceUnicode = process.env.GASPOLL_UNICODE === '1';
+  const uni = !forceAscii || forceUnicode;  // Default Unicode, unless force ASCII and not force Unicode
+  
   return {
     bullet: uni ? '●' : '*',
     circle: uni ? '○' : 'o',
@@ -425,7 +433,10 @@ const SMOKE_ROWS = [
 ].map((s) => s.padEnd(SMOKE_W - 1).slice(0, SMOKE_W - 1) + ' ');
 
 function smokeFor(w) {
-  const asciiMode = !supportsUnicode() || process.env.GASPOLL_ASCII === '1';
+  // Default to Unicode rendering with smoke effects. Only hide if explicitly requesting ASCII
+  const forceAscii = process.env.GASPOLL_ASCII === '1';
+  const forceUnicode = process.env.GASPOLL_UNICODE === '1';
+  const asciiMode = forceAscii && !forceUnicode;
   if (asciiMode) return null;
   if (w >= SMOKE_MIN_W) return { w: SMOKE_W, rows: SMOKE_ROWS };
   return null;
@@ -490,14 +501,20 @@ function flatBannerLines() {
 
 function bannerRowCount(variant, w, rows) {
   if (w < 66) return 0;
-  const asciiMode = !supportsUnicode() || process.env.GASPOLL_ASCII === '1';
+  // Default to Unicode rendering. Force ASCII with GASPOLL_ASCII=1 or GASPOLL_UNICODE=0
+  const forceAscii = process.env.GASPOLL_ASCII === '1' || process.env.GASPOLL_UNICODE === '0';
+  const forceUnicode = process.env.GASPOLL_UNICODE === '1';
+  const asciiMode = forceAscii && !forceUnicode;
   if (asciiMode) return 7;
   if (variant === 'flat') return 7;
   return 8;
 }
 
 function bannerLine(idx, w = getTermWidth()) {
-  const asciiMode = !supportsUnicode() || process.env.GASPOLL_ASCII === '1';
+  // Default to Unicode rendering. Force ASCII with GASPOLL_ASCII=1 or GASPOLL_UNICODE=0
+  const forceAscii = process.env.GASPOLL_ASCII === '1' || process.env.GASPOLL_UNICODE === '0';
+  const forceUnicode = process.env.GASPOLL_UNICODE === '1';
+  const asciiMode = forceAscii && !forceUnicode;
   const variant = bannerVariant();
 
   if (asciiMode) {
@@ -741,25 +758,26 @@ function renderMenu(data, opts = {}) {
   const keycap = (k) => sug.key === k ? c.keycap(k) : c.silver(`[${k}]`);
   const item = (k, label) => `  ${keycap(k)} ${c.white(label)}`;
 
+  out.push(''); // Tambahan jarak atas
   out.push(dashLine);
   // judul kolom: PROSES di kolom 2, HASIL & ALAT di col2Start
   out.push(' '.repeat(m) + c.gray('PROSES') + ' '.repeat(Math.max(0, c2 - m - visualWidth('PROSES'))) + c.gray('HASIL & ALAT'));
 
   if (twoCol) {
-    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('4', 'Lihat hasil terakhir')));
-    out.push(gridLine(item('2', 'Benchmark agent coding'), item('5', 'Buka folder hasil')));
-    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('6', 'Ulangi benchmark 1 provider')));
-    out.push(gridLine('', item('7', 'Pengaturan')));
+    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('5', 'Lihat hasil terakhir')));
+    out.push(gridLine(item('2', 'Benchmark agent coding'), item('6', 'Buka folder hasil')));
+    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('7', 'Ulangi benchmark 1 provider')));
+    out.push(gridLine(item('4', 'Realtime bot guardian'), item('8', 'Pengaturan')));
     out.push(gridLine(c.gray('[g] Riwayat & log   [q] Keluar'), ''));
   } else {
     out.push(item('1', 'Tes provider & buat combo'));
     out.push(item('2', 'Benchmark agent coding'));
     out.push(item('3', 'Tes + benchmark berurutan'));
-    out.push(c.gray(' '.repeat(m) + 'HASIL & ALAT'));
-    out.push(item('4', 'Lihat hasil terakhir'));
-    out.push(item('5', 'Buka folder hasil'));
-    out.push(item('6', 'Ulangi benchmark 1 provider'));
-    out.push(item('7', 'Pengaturan'));
+    out.push(item('4', 'Realtime bot guardian'));
+    out.push(item('5', 'Lihat hasil terakhir'));
+    out.push(item('6', 'Buka folder hasil'));
+    out.push(item('7', 'Ulangi benchmark 1 provider'));
+    out.push(item('8', 'Pengaturan'));
     out.push(item('g', 'Riwayat & log'));
     out.push(c.gray(' '.repeat(m) + '[q] Keluar'));
   }
@@ -843,7 +861,7 @@ function renderMenu(data, opts = {}) {
     saranLine.forEach(l => out.push(l));
   }
   out.push('');
-  const brackets = c.gray('[1-7, g, q]');
+  const brackets = c.gray('[1-8, g, q]');
   out.push(' '.repeat(m) + c.gray('Pilih ') + brackets + ' ' + c.accent(s.arrow) + ' ');
   return out;
 }
