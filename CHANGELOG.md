@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## [1.2.7] - 2026-11-12
+- Menu utama ditata ulang: tombol 1 sampai 8 berurutan (UTAMA berisi 1-4, ALAT berisi 5-8), dan [g] Riwayat serta [q] Keluar di baris sendiri.
+- Gambar menu di README diperbarui dan kini menampilkan menu [8].
+
 ## [1.2.6] - 2026-11-11
 - Menu baru [8] Realtime bot guardian: perantara lokal (127.0.0.1:20130) di depan 9Router. Saat sebuah model kena limit, macet, atau menjawab kosong, permintaan yang sama langsung dialihkan ke model berikutnya dari combo-auto-combo.json, tanpa mengubah combo di 9Router maupun urutan di berkas.
 - Layar live berbasis teks: model yang sedang dipakai, status tiap model (sehat, tertahan, nonaktif), dan peristiwa terbaru. Tombol r (cek semua), 1 (reset), q (keluar).

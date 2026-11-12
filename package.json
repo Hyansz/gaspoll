@@ -1,10 +1,11 @@
 {
   "name": "9router-tools",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Automated testing, benchmarking, and combo management for 9Router",
   "main": "src/cli.js",
   "scripts": {
-    "start": "node src/cli.js"
+    "start": "node src/cli.js",
+    "test": "node test/run-tests.js"
   },
   "optionalDependencies": {
     "playwright-core": "^1.64.1"

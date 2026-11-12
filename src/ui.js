@@ -759,20 +759,22 @@ function renderMenu(data, opts = {}) {
   const item = (k, label) => `  ${keycap(k)} ${c.white(label)}`;
 
   out.push(dashLine);
-  // judul kolom: PROSES di kolom 2, HASIL & ALAT di col2Start
-  out.push(' '.repeat(m) + c.gray('PROSES') + ' '.repeat(Math.max(0, c2 - m - visualWidth('PROSES'))) + c.gray('HASIL & ALAT'));
+  // judul kolom: UTAMA di kolom 1 dan ALAT di kolom 2
+  out.push(' '.repeat(m) + c.gray('UTAMA') + (twoCol ? ' '.repeat(Math.max(0, c2 - m - visualWidth('UTAMA'))) + c.gray('ALAT') : ''));
 
   if (twoCol) {
-    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('4', 'Lihat hasil terakhir')));
-    out.push(gridLine(item('2', 'Benchmark agent coding'), item('5', 'Buka folder hasil')));
-    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('6', 'Ulangi benchmark 1 provider')));
-    out.push(gridLine(item('8', 'Realtime bot guardian'), item('7', 'Pengaturan')));
-    out.push(gridLine(c.gray('[g] Riwayat & log   [q] Keluar'), ''));
+    out.push(gridLine(item('1', 'Tes provider & buat combo'), item('5', 'Buka folder hasil')));
+    out.push(gridLine(item('2', 'Benchmark agent coding'), item('6', 'Ulangi benchmark 1 provider')));
+    out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('7', 'Pengaturan')));
+    out.push(gridLine(item('4', 'Lihat hasil terakhir'), item('8', 'Realtime bot guardian')));
+    out.push('');
+    out.push(gridLine(c.gray('[g] Riwayat & log'), c.gray('[q] Keluar')));
   } else {
     out.push(item('1', 'Tes provider & buat combo'));
     out.push(item('2', 'Benchmark agent coding'));
     out.push(item('3', 'Tes + benchmark berurutan'));
     out.push(item('4', 'Lihat hasil terakhir'));
+    out.push(' '.repeat(m) + c.gray('ALAT'));
     out.push(item('5', 'Buka folder hasil'));
     out.push(item('6', 'Ulangi benchmark 1 provider'));
     out.push(item('7', 'Pengaturan'));
