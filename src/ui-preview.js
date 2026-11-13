@@ -41,7 +41,7 @@ if (hasFlag('unicode')) process.env.GASPOLL_UNICODE = '1';
 function fakeData() {
   const base = {
     alive: { ok: true, baseUrl: 'http://localhost:20128', reason: '' },
-    apiKey: 'dummy-key-sample',
+    apiKey: 'sk-c1a2b3c4d5e6c181',
     t: { tested_at: new Date(Date.now() - 2 * 3600e3).toISOString(), name: 'auto-combo', models: 13 },
     b: { tested_at: new Date(Date.now() - 3 * 3600e3).toISOString() },
   };

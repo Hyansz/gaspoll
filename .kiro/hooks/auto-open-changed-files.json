@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Auto-open Changed Files",
+      "trigger": "PostToolUse",
+      "description": "Automatically opens any file in the editor after Kiro creates, edits, or moves it, so changes are always visible in the left editor pane",
+      "matcher": "fs_write|str_replace|fs_append|smart_relocate|semantic_rename",
+      "action": {
+        "type": "command",
+        "command": "$raw = [Console]::In.ReadToEnd(); try { $d = $raw | ConvertFrom-Json; $p = $d.tool_input.path; if (-not $p) { $p = $d.tool_input.destinationPath }; if ($p) { if (-not [System.IO.Path]::IsPathRooted($p)) { $p = Join-Path $d.cwd $p }; if (Test-Path $p) { & kiro --reuse-window $p *> $null } } } catch {}",
+        "timeout": 15
+      }
+    }
+  ]
+}

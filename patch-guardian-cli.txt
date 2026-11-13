@@ -1,0 +1,196 @@
+@@FILE src/cli.js
+@@OLD
+// ---------------------------------------------------------------- layar Realtime bot guardian [8]
+
+let GUARD_STATES = { models: {} };
+let GUARD_LOGS = [];
+
+function loadGuardState() {
+  try {
+    const p = L.inResults('combo-state.json');
+    if (fs.existsSync(p)) {
+      GUARD_STATES = JSON.parse(fs.readFileSync(p, 'utf8'));
+    }
+  } catch {}
+}
+
+function saveGuardState() {
+  try {
+    const p = L.inResults('combo-state.json');
+    GUARD_STATES.updatedAt = new Date().toISOString();
+    fs.writeFileSync(p, JSON.stringify(GUARD_STATES, null, 2), { mode: 0o600 });
+  } catch {}
+}
+
+function addGuardLog(msg) {
+  const time = new Date().toTimeString().slice(0, 8);
+  GUARD_LOGS.unshift(`[${time}] ${msg}`);
+  if (GUARD_LOGS.length > 10) GUARD_LOGS.pop();
+}
+
+async function probeSingleModelQuick(modelId, timeoutMs = 15000) {
+  const started = Date.now();
+  try {
+    const headers = L.authHeaders(cfg);
+    const { res, body } = await L.fetchJson(
+      `${cfg.baseUrl}/v1/chat/completions`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: 'user', content: 'Ping' }],
+          max_tokens: 10,
+          stream: false,
+        }),
+      },
+      timeoutMs
+    );
+    const ms = Date.now() - started;
+    if (!res.ok) {
+      const reason = `HTTP ${res.status}: ${L.errText(body, res)}`;
+      const rateLimited = /429|too many requests|rate.?limit/i.test(reason);
+      return { ok: false, ms, rateLimited, reason };
+    }
+    return { ok: true, ms, reason: '' };
+  } catch (e) {
+    const ms = Date.now() - started;
+    const rateLimited = /429|too many requests|rate.?limit/i.test(e.message);
+    return { ok: false, ms, rateLimited, reason: e.message };
+  }
+}
+
+async function actionGuardian() {
+  loadGuardState();
+  const s = UI.sym();
+
+  while (true) {
+    L.clearScreen();
+    const alive = await L.checkRouter(cfg, 3000);
+    if (!alive.ok) {
+      L.line('  ' + col.bold('REALTIME BOT GUARDIAN (LIVE MONITOR)'));
+      L.line('  ' + col.dim('------------------------------------------------------------'));
+      L.line('  ' + col.red(`${s.fail} 9Router tidak bisa dihubungi: ${alive.reason}`));
+      L.line('');
+      L.line('  [0] Kembali ke menu utama');
+      const ans = await ask(promptPrefix() + col.cyan('Pilih › '));
+      if (ans === '0' || ans === 'q') { returnToMenu(); return; }
+      continue;
+    }
+
+    const combo = readJson('combo-auto-combo.json');
+    const modelIds = combo?.models || [];
+    const states = GUARD_STATES?.models || {};
+
+    if (!modelIds.length) {
+      L.line('  ' + col.bold('REALTIME BOT GUARDIAN (LIVE MONITOR)'));
+      L.line('  ' + col.dim('------------------------------------------------------------'));
+      L.line('  ' + col.yellow(`${s.warn} Belum ada combo (combo-auto-combo.json kosong/tidak ada).`));
+      L.line('  ' + col.dim('  Silakan jalankan menu [1] (Tes provider & buat combo) terlebih dahulu.'));
+      L.line('');
+      L.line('  [0] Kembali ke menu utama');
+      const ans = await ask(promptPrefix() + col.cyan('Pilih › '));
+      if (ans === '0' || ans === 'q' || ans === '') { returnToMenu(); return; }
+      continue;
+    }
+
+    let healthy = 0, degraded = 0, inactive = 0;
+    for (const id of modelIds) {
+      const st = states[id]?.status || 'healthy';
+      if (st === 'degraded') degraded++;
+      else if (st === 'inactive') inactive++;
+      else healthy++;
+    }
+
+    L.line('  ' + col.bold('REALTIME BOT GUARDIAN (LIVE DASHBOARD)'));
+    L.line('  ' + col.dim('------------------------------------------------------------'));
+    L.line(`  Status Router : ${col.green('● ONLINE')} (${cfg.baseUrl})`);
+    L.line(`  Total Model   : ${modelIds.length} model dalam combo`);
+    L.line(`  Ringkasan     : ${col.green(`${s.success} ${healthy} Sehat`)}  |  ${col.yellow(`${s.warn} ${degraded} Degraded (Cooldown)`)}  |  ${col.dim(`${s.fail} ${inactive} Inactive`)}`);
+    L.line('  ' + col.dim('------------------------------------------------------------'));
+
+    L.line('  ' + col.bold('Daftar Model (Fallback Order):'));
+    modelIds.slice(0, 10).forEach((id, idx) => {
+      const st = states[id] || { status: 'healthy', lastLatency: 0, lastCheck: '-' };
+      let badge = col.green('[OK]  ');
+      if (st.status === 'degraded') badge = col.yellow('[429] ');
+      else if (st.status === 'inactive') badge = col.red('[FAIL]');
+      const latencyStr = st.lastLatency ? `${st.lastLatency}ms` : '-';
+      const reasonInfo = st.reason ? col.dim(` (${st.reason})`) : '';
+      L.line(`   ${String(idx + 1).padStart(2)}. ${badge} ${id.padEnd(38)} ${col.dim(latencyStr.padStart(6))}  ${col.dim(st.lastCheck || '-')}${reasonInfo}`);
+    });
+    if (modelIds.length > 10) {
+      L.line(`   ... dan ${modelIds.length - 10} model lainnya.`);
+    }
+
+    L.line('  ' + col.dim('------------------------------------------------------------'));
+    L.line('  ' + col.bold('Log Aktivitas Real-Time:'));
+    if (!GUARD_LOGS.length) {
+      L.line('  ' + col.dim('  (Belum ada tes. Tekan [r] atau Enter untuk mulai tes kesehatan model).'));
+    } else {
+      GUARD_LOGS.slice(0, 5).forEach((log) => {
+        L.line('  ' + col.dim(`  ${log}`));
+      });
+    }
+
+    L.line('  ' + col.dim('------------------------------------------------------------'));
+    L.line('  ' + col.bold('Panduan & Kontrol:'));
+    L.line('  ' + col.cyan('[r]') + col.dim('           : Tes ulang (probe) kesehatan semua model secara live.'));
+    L.line('  ' + col.cyan('[Enter]') + col.dim('       : Refresh / muat ulang tampilan dashboard.'));
+    L.line('  ' + col.cyan('[1]') + col.dim('           : Reset status (membersihkan semua error/cooldown model).'));
+    L.line('  ' + col.cyan('[0] / [q]') + col.dim('     : Kembali ke menu utama.'));
+    L.line('  ' + col.dim('------------------------------------------------------------'));
+    const ans = await ask(promptPrefix() + col.cyan('Pilih aksi › '));
+    const k = (ans || '').trim().toLowerCase();
+
+    if (k === '0' || k === 'q') {
+      returnToMenu();
+      return;
+    } else if (k === '1') {
+      GUARD_STATES = { models: {}, updatedAt: new Date().toISOString() };
+      saveGuardState();
+      addGuardLog('State monitor direset.');
+    } else if (k === '') {
+      // Hanya Enter: refresh dashboard tanpa melakukan probe otomatis
+      continue;
+    } else if (k === 'r') {
+      addGuardLog('Memulai probe cepat semua model...');
+      for (const id of modelIds) {
+        addGuardLog(`Probing ${id}...`);
+        const result = await probeSingleModelQuick(id, 10000);
+        if (!GUARD_STATES.models) GUARD_STATES.models = {};
+        const nowStr = new Date().toLocaleTimeString();
+        if (result.ok) {
+          GUARD_STATES.models[id] = { status: 'healthy', lastLatency: result.ms, lastCheck: nowStr, consecutiveFails: 0 };
+          addGuardLog(`✔ ${id} OK (${result.ms}ms)`);
+        } else {
+          const isRateLimit = result.rateLimited;
+          GUARD_STATES.models[id] = {
+            status: isRateLimit ? 'degraded' : 'inactive',
+            lastLatency: result.ms,
+            lastCheck: nowStr,
+            consecutiveFails: (GUARD_STATES.models[id]?.consecutiveFails || 0) + 1,
+            reason: result.reason
+          };
+          addGuardLog(`✖ ${id} GAGAL: ${result.reason}`);
+        }
+        saveGuardState();
+      }
+      addGuardLog('Probe selesai.');
+    }
+  }
+}
+@@NEW
+// ---------------------------------------------------------------- layar Realtime bot guardian [8]
+// Layar live ada di guardian.js (perantara di depan 9Router). Menu hanya menjalankannya.
+
+const GUARD = path.join(__dirname, 'guardian.js');
+
+async function actionGuardian() {
+  L.clearScreen();
+  if (!(await ensureRouter())) { returnToMenu(); return; }
+  const t0 = Date.now();
+  const code = await runScript(GUARD, []);
+  await finishAction('Realtime bot guardian', code, t0);
+}
+@@END

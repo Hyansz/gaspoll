@@ -1,0 +1,51 @@
+@@FILE src/cli.js
+@@OLD
+async function actionRetest() {
+@@NEW
+// ---------------------------------------------------------------- layar Realtime bot guardian [8]
+// Layar live ada di guardian.js (perantara di depan 9Router). Menu hanya menjalankannya.
+
+const GUARD = path.join(__dirname, 'guardian.js');
+
+async function actionGuardian() {
+  L.clearScreen();
+  if (!(await ensureRouter())) { returnToMenu(); return; }
+  const t0 = Date.now();
+  const code = await runScript(GUARD, []);
+  await finishAction('Realtime bot guardian', code, t0);
+}
+
+async function actionRetest() {
+@@END
+@@FILE src/cli.js
+@@OLD
+    else if (k === '7') await actionSettings();
+@@NEW
+    else if (k === '7') await actionSettings();
+    else if (k === '8') await actionGuardian();
+@@END
+@@FILE src/cli.js
+@@OLD
+Ketik 1-7, g, atau q.
+@@NEW
+Ketik 1-8, g, atau q.
+@@END
+@@FILE src/ui.js
+@@OLD
+    out.push(gridLine('', item('7', 'Pengaturan')));
+@@NEW
+    out.push(gridLine(item('8', 'Realtime bot guardian'), item('7', 'Pengaturan')));
+@@END
+@@FILE src/ui.js
+@@OLD
+    out.push(item('3', 'Tes + benchmark berurutan'));
+@@NEW
+    out.push(item('3', 'Tes + benchmark berurutan'));
+    out.push(item('8', 'Realtime bot guardian'));
+@@END
+@@FILE src/ui.js
+@@OLD
+  const brackets = c.gray('[1-7, g, q]');
+@@NEW
+  const brackets = c.gray('[1-8, g, q]');
+@@END

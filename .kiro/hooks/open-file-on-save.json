@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Open File on Save",
+      "trigger": "PostFileSave",
+      "description": "Automatically opens any file in the editor when Kiro saves or modifies it",
+      "action": {
+        "type": "command",
+        "command": "$raw = [Console]::In.ReadToEnd(); try { $d = $raw | ConvertFrom-Json; $p = $d.file_path; if ($p) { if (-not [System.IO.Path]::IsPathRooted($p)) { $p = Join-Path $d.cwd $p }; if (Test-Path $p) { & kiro --reuse-window $p *> $null } } } catch {}",
+        "timeout": 15
+      }
+    }
+  ]
+}

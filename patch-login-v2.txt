@@ -1,0 +1,93 @@
+@@FILE src/lib.js
+@@OLD
+      Object.assign(cfg, JSON.parse(fs.readFileSync(cfgPath, 'utf8')), { source: 'config.json' });
+@@NEW
+      Object.assign(cfg, JSON.parse(fs.readFileSync(cfgPath, 'utf8')), { source: 'config.json' });
+      cfg.configFile = cfgPath;
+@@END
+@@FILE src/lib.js
+@@OLD
+      cfg.source = 'config.bat';
+@@NEW
+      cfg.source = 'config.bat';
+      cfg.configFile = CONFIG_BAT;
+@@END
+@@FILE src/lib.js
+@@OLD
+  if (env.NINE_ROUTER_PASSWORD) cfg.password = env.NINE_ROUTER_PASSWORD;
+@@NEW
+  if (env.NINE_ROUTER_PASSWORD) {
+    cfg.password = env.NINE_ROUTER_PASSWORD;
+    cfg.passwordSource = 'variabel lingkungan NINE_ROUTER_PASSWORD';
+  }
+@@END
+@@FILE src/lib.js
+@@OLD
+  if (!cfg.password) cfg.password = '123456';
+@@NEW
+  if (cfg.password != null && typeof cfg.password !== 'string') cfg.password = String(cfg.password);
+  if (!cfg.password) {
+    cfg.password = '123456';
+    cfg.passwordSource = 'bawaan 123456 (password belum diatur)';
+  } else if (!cfg.passwordSource) {
+    cfg.passwordSource = cfg.source === 'default' ? 'bawaan' : cfg.source;
+  }
+@@END
+@@FILE src/lib.js
+@@OLD
+  if (!r.res.ok) {
+    const hint = r.res.status >= 500
+      ? `login dashboard gagal (HTTP ${r.res.status} — server error di 9Router, bukan masalah password)`
+      : `login dashboard gagal (HTTP ${r.res.status}), cek password di menu [7]`;
+    throw new Error(hint);
+  }
+@@NEW
+  if (!r.res.ok) {
+    const pw = String(cfg.password || '');
+    const st = r.res.status;
+    const detail = errText(r.body, r.res);
+    const hint = st === 429
+      ? `terlalu banyak percobaan login, tunggu ${r.res.headers.get('retry-after') || 'beberapa'} detik lalu coba lagi`
+      : st >= 500
+        ? 'server error di 9Router, bukan masalah password'
+        : r.body && r.body.mustChangePassword
+          ? '9Router meminta password diganti dulu: buka dashboard di browser dan atur password'
+          : 'cek password di menu [7]';
+    const err = new Error(`login dashboard gagal (HTTP ${st}${detail && !/^HTTP \d+$/.test(detail) ? `: ${detail}` : ''}), ${hint}`);
+    err.diag = [
+      `password dari : ${cfg.passwordSource || 'config'} (${pw.length} karakter${pw !== pw.trim() ? ', ADA spasi di awal/akhir' : ''})`,
+      `berkas config : ${cfg.configFile || '(tidak ada config.json, memakai bawaan)'}`,
+      `alamat router : ${cfg.baseUrl}`,
+      'Password harus sama dengan yang dipakai login ke dashboard 9Router di browser.',
+    ];
+    throw err;
+  }
+@@END
+@@FILE src/lib.js
+@@OLD
+  return sc.filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+@@NEW
+  const cookie = sc.filter(Boolean).map((c) => c.split(';')[0]).join('; ');
+  if (!cookie && r.body && r.body.mustChangePassword) {
+    const err = new Error('login dashboard ditolak: 9Router meminta password diganti dulu. Buka dashboard di browser, atur password, lalu isi di menu [7]');
+    err.diag = [`alamat router : ${cfg.baseUrl}`];
+    throw err;
+  }
+  return cookie;
+@@END
+@@FILE src/lib.js
+@@OLD
+    try { cookie = await dashboardCookie(cfg); } catch (e) {
+      line(col.yellow(`[!] Login dashboard dilewati: ${e.message} (mencoba tanpa cookie)`));
+      cookie = '';
+    }
+@@NEW
+    try { cookie = await dashboardCookie(cfg); } catch (e) {
+      line(col.yellow(`[!] Login dashboard dilewati: ${e.message} (mencoba tanpa cookie)`));
+      (e.diag || []).forEach((d) => line(col.dim(`        ${d}`)));
+      if (path.basename(process.argv[1] || '') === 'test-9router.js') {
+        line(col.dim(`        Tanpa tes ulang: node ${relCmd('test-9router.js')} --apply --name ${Object.keys(tierMap)[0] || 'auto-combo'}`));
+      }
+      cookie = '';
+    }
+@@END

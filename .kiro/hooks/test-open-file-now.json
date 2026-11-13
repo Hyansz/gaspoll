@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Test Open File Now",
+      "trigger": "UserPromptSubmit",
+      "description": "Quick test to open a file and verify hook works",
+      "action": {
+        "type": "command",
+        "command": "kiro --reuse-window \"c:\\sandbox\\9router-tools\\README.md\" 2>&1"
+      }
+    }
+  ]
+}

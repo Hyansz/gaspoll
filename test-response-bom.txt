@@ -1,0 +1,10 @@
+﻿HTTP/1.1 200 OK
+Content-Type: text/event-stream
+X-Guardian-Model: cf/@cf/meta/llama-3.3-70b-instruct-fp8-fast
+Date: Tue, 10 Nov 2026 04:28:06 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+
+{"id":"id-1794284886980","object":"chat.completion","created":1794284886,"model":"@cf/meta/llama-3.3-70b-instruct-fp8-fast","choices":[{"index":0,"message":{"role":"assistant","content":"391","refusal":null,"annotations":null,"audio":null,"function_call":null,"reasoning":null},"logprobs":null,"finish_reason":"stop","stop_reason":null,"token_ids":null,"routed_experts":null}],"usage":{"prompt_tokens":47,"completion_tokens":2,"total_tokens":49,"prompt_tokens_details":{"cached_tokens":0},"neurons":1.6629910469055176}}data: [DONE]
+

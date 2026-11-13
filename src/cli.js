@@ -310,7 +310,7 @@ async function actionBoth() {
   if (!(await ensureRouter())) { returnToMenu(); return; }
   const t0 = Date.now();
   console.log(col.bold('\nLANGKAH 1 dari 2: TEST PROVIDER'));
-  let code = await runStep(TEST, TEST_ARGS);
+  let code = await runStep(TEST, [...TEST_ARGS, '--create']);
   if (code !== 0) {
     const lr = readJson('last-run.json');
     if (lr && lr.passed > 0) {
