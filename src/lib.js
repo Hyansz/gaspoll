@@ -367,10 +367,119 @@ async function fetchJson(url, init = {}, timeoutMs = 15000) {
   }
 }
 
-const errText = (body, res) => {
+const errText = (body, res, limit = 160) => {
   const m = body?.error?.message ?? body?.error ?? body?.message ?? '';
   const s = typeof m === 'string' ? m : JSON.stringify(m);
-  return (s || (res ? `HTTP ${res.status}` : '')).replace(/\s+/g, ' ').slice(0, 160);
+  return (s || (res ? `HTTP ${res.status}` : '')).replace(/\s+/g, ' ').slice(0, limit);
+};
+
+// ---------------------------------------------------------------- klasifikasi kegagalan tes provider
+// 9Router membungkus error upstream dengan HTTP 500/502/503; status aslinya ada di dalam pesan
+// ("[429]", "[402]"). Karena itu isi pesan dibaca lebih dulu, baru status luar.
+// level: 'provider' = berlaku untuk seluruh provider (kredensial, saldo, akun)
+//        'soft'     = baru dianggap masalah provider kalau berulang dan belum ada model yang lolos
+//        'model'    = hanya model itu sendiri
+const FAIL_RE = {
+  noCred: /no active credentials/i,
+  balance: /insufficient[ _]balance|credit balance (is )?(too )?low|run out of credits|out of credits|insufficient[_ ]quota|add (usage )?credits|credits required|payment required/i,
+  plan: /not available on[^.]{0,40}plan|workers free plan|requires? (a )?(paid|pro) (plan|subscription)|paid model|upgrade (your )?(plan|subscription)/i,
+  quota: /exceeded (your )?(current )?(quota|usage)|quota (has been )?(exceeded|exhausted|used)|used up (today|your)|usage limit|free[- ]usage[- ]exhausted|daily (limit|quota|free)|reached (the|your) (limit|quota)/i,
+  rate: /rate.?limit|too many requests|requests? per (second|minute|hour)|slow down/i,
+  auth: /account (has been )?(disabled|suspended|banned)|invalid (api )?key|api key[^.]{0,30}(invalid|blocked|revoked|expired)|unauthori[sz]ed|authentication (failed|required)|login expired|request illegal|forbidden|invalid token|token (expired|rejected)/i,
+  gone: /has been (deprecated|removed|retired|discontinued)|end of life|no longer (available|supported)|model_gone|deprecated/i,
+  noModel: /unsupported ?model|no such model|model[^.]{0,60}(not found|does not exist|not available|not supported)|requested entity was not found|please check the model|unknown model|invalid model/i,
+  timeout: /^timeout|timed out/i,
+  network: /econnrefused|enotfound|econnreset|fetch failed|socket hang up|network/i,
+  empty: /^respons kosong/i,
+};
+
+function innerStatus(text) {
+  const m = String(text || '').match(/\[(\d{3})\]/) || String(text || '').match(/"code"\s*:\s*(\d{3})(?!\d)/);
+  const n = m ? parseInt(m[1], 10) : null;
+  return n && n >= 400 && n <= 599 ? n : null;
+}
+
+function classifyTestFailure(reason, httpStatus) {
+  const text = String(reason || '');
+  const code = innerStatus(text) || httpStatus || null;
+  const out = (category, level, extra) => ({ category, level, code, ...(extra || {}) });
+
+  if (FAIL_RE.timeout.test(text)) return out('timeout', 'soft');
+  if (FAIL_RE.noCred.test(text)) return out('tanpa kredensial', 'provider');
+  if (FAIL_RE.balance.test(text) || code === 402) return out('saldo habis', 'provider');
+  if (FAIL_RE.quota.test(text)) return out('kuota habis', 'soft');
+  if (FAIL_RE.plan.test(text)) return out('batasan paket', 'model');
+  if (FAIL_RE.rate.test(text) || code === 429) return out('rate limit', 'model', { retry: true });
+  if (FAIL_RE.auth.test(text) || code === 401 || code === 403) return out('auth ditolak', 'provider');
+  if (FAIL_RE.gone.test(text) || code === 410) return out('model dihentikan', 'model');
+  if (FAIL_RE.noModel.test(text) || code === 404) return out('model tidak ada', 'model');
+  if (FAIL_RE.empty.test(text)) return out('respons kosong', 'model');
+  if (FAIL_RE.network.test(text) && !code) return out('koneksi gagal', 'model');
+  if (code >= 500) return out('error server', 'soft');
+  if (code === 400) return out('ditolak provider', 'model');
+  return out('error lain', 'model');
+}
+
+// Aturan pemutus per provider. 'distinct' = jumlah model BERBEDA dengan kategori itu,
+// 'streak' = kegagalan berturut-turut dengan kategori yang sama. Provider yang sudah punya
+// minimal satu model lolos tidak pernah dilewati penuh.
+const BREAKER_RULES = {
+  'tanpa kredensial': { need: 2, mode: 'distinct' },
+  'saldo habis': { need: 2, mode: 'distinct' },
+  'auth ditolak': { need: 3, mode: 'distinct' },
+  'kuota habis': { need: 4, mode: 'streak' },
+  'timeout': { need: 3, mode: 'streak' },
+  'error server': { need: 3, mode: 'streak' },
+};
+
+function createProviderBreaker(rules = BREAKER_RULES) {
+  const st = {};
+  const get = (p) => (st[p] = st[p] || { passed: 0, distinct: {}, streakCat: null, streak: 0, skip: null });
+  return {
+    // null = lanjut menguji; objek = lewati provider ini ({ category, count })
+    check(p) { const s = st[p]; return s && s.skip ? { ...s.skip } : null; },
+    record(p, id, result) {
+      const s = get(p);
+      if (result.ok) { s.passed++; s.skip = null; s.streakCat = null; s.streak = 0; return null; }
+      if (result.skipped) return s.skip;
+      const cat = result.category || 'error lain';
+      if (s.streakCat === cat) s.streak++; else { s.streakCat = cat; s.streak = 1; }
+      (s.distinct[cat] = s.distinct[cat] || new Set()).add(id);
+      if (s.passed > 0 || s.skip) return s.skip;
+      const rule = rules[cat];
+      if (!rule) return null;
+      const n = rule.mode === 'streak' ? s.streak : s.distinct[cat].size;
+      if (n >= rule.need) s.skip = { category: cat, count: n };
+      return s.skip;
+    },
+  };
+}
+
+const SKIP_TEXT = {
+  'tanpa kredensial': 'provider belum terhubung di 9Router (No active credentials)',
+  'saldo habis': 'saldo/kredit provider habis',
+  'auth ditolak': 'akses/akun ditolak provider',
+  'kuota habis': 'kuota provider habis berturut-turut',
+  'timeout': 'provider timeout berturut-turut (tampaknya menggantung)',
+  'error server': 'provider error server berturut-turut',
+};
+const skipReason = (category) => `dilewati: ${SKIP_TEXT[category] || category}`;
+
+// Saran tindakan untuk user (ASCII saja, maksimal ~48 karakter supaya muat di layar 100 kolom).
+const CATEGORY_ADVICE = {
+  'tanpa kredensial': 'isi API key/login di dashboard 9Router',
+  'saldo habis': 'isi saldo atau hapus koneksi tak terpakai',
+  'auth ditolak': 'cek akun/API key (login kedaluwarsa?)',
+  'kuota habis': 'tunggu kuota reset atau pakai provider lain',
+  'rate limit': 'ulangi nanti atau pakai --provider-parallel 1',
+  'batasan paket': 'model butuh paket berbayar, abaikan saja',
+  'model dihentikan': 'model sudah pensiun, hapus dari combo',
+  'model tidak ada': 'nama model tak dikenal provider, cek namanya',
+  'timeout': 'provider lambat/mati, naikkan --timeout',
+  'error server': 'provider/9Router bermasalah, coba lagi nanti',
+  'respons kosong': 'model tidak menjawab, mungkin bukan model chat',
+  'koneksi gagal': 'pastikan 9Router masih berjalan',
+  'ditolak provider': 'permintaan ditolak, cek model/parameter',
 };
 
 async function checkRouter(cfg, timeoutMs = 5000) {
@@ -703,6 +812,7 @@ module.exports = {
   col, stripAnsi, status, line, pad, lpad, rule, heading, fmtTime, fmtDur, cmdLine, UI,
   startLog, lastLogPath, copyText, openPath,
   fetchJson, errText, checkRouter, SKIP_MODEL_DEFAULT, fetchAllModelIds, dropVariants,
+  classifyTestFailure, createProviderBreaker, BREAKER_RULES, skipReason, CATEGORY_ADVICE,
   modelCacheKey, // export untuk test
   runPool, runByProvider, dashboardCookie, saveCombo, applyCombos, installCrashHandlers,
 };

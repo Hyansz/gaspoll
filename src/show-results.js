@@ -47,33 +47,62 @@ function render() {
     const t = test.data;
     const res = t.results || [];
     const ok = res.filter((r) => r.ok);
-    const bad = res.filter((r) => !r.ok);
+    const skipped = res.filter((r) => !r.ok && r.skipped);
+    const bad = res.filter((r) => !r.ok && !r.skipped);
     p(`  Waktu : ${L.fmtTime(t.tested_at)}  (${UI.relativeTime(t.tested_at)})`);
-    p(`  ${S.success} ${col.green(String(ok.length))} lolos    ${S.fail} ${col.red(String(bad.length))} gagal`);
+    const head = [`${S.success} ${col.green(String(ok.length))} lolos`];
+    if (skipped.length) head.push(`${S.warn} ${col.yellow(String(skipped.length))} dilewati (tidak diuji)`);
+    head.push(`${S.fail} ${col.red(String(bad.length))} gagal`);
+    p('  ' + head.join('    '));
     p('');
     p(`  ${col.bold(`Combo "${t.name}":`)}`);
     (t.models || []).forEach((m, i) => {
       const pColor = UI.colors.provider(L.prefixOf(m));
       p(`    ${col.dim(L.lpad(i + 1, 2))}. ${pColor(m)}`);
     });
+    // Label memakai kategori baru bila ada (hasil tes 1.2.9+), kalau tidak jatuh ke tebakan lama.
+    const labelOf = (r) => r.category || L.classifyFailure(r.reason).label;
+    const groupLines = (list, icon, keyOf) => {
+      const groups = {};
+      list.forEach((r) => {
+        const key = `${L.prefixOf(r.id) || 'unknown'} ${S.mid} ${keyOf(r)}`;
+        groups[key] = (groups[key] || 0) + 1;
+      });
+      const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+      const maxGroups = 12;
+      sorted.slice(0, maxGroups).forEach(([k, count]) => {
+        p(`    ${icon} ${k}: ${count} model`);
+      });
+      if (sorted.length > maxGroups) {
+        p(`    ${col.dim(`+${sorted.length - maxGroups} kelompok lain`)}`);
+      }
+    };
+    if (skipped.length) {
+      p('');
+      p(`  ${col.bold('Dilewati (tidak diuji):')}`);
+      groupLines(skipped, S.warn, (r) => r.category || 'dilewati');
+    }
     if (bad.length) {
       p('');
       p(`  ${col.bold('Model gagal:')}`);
-      const failureGroups = {};
-      bad.forEach((r) => {
-        const pfx = L.prefixOf(r.id) || 'unknown';
-        const classified = L.classifyFailure(r.reason);
-        const key = `${pfx} ${S.mid} ${classified.label}`;
-        failureGroups[key] = (failureGroups[key] || 0) + 1;
+      groupLines(bad, S.fail, labelOf);
+    }
+    const advice = L.CATEGORY_ADVICE || {};
+    const cats = {};
+    skipped.concat(bad).forEach((r) => {
+      if (!r.category || !advice[r.category]) return;
+      const e = (cats[r.category] = cats[r.category] || new Set());
+      e.add(L.prefixOf(r.id) || 'unknown');
+    });
+    const catList = Object.entries(cats).sort((a, b) => b[1].size - a[1].size);
+    if (catList.length) {
+      p('');
+      p(`  ${col.bold('Saran:')}`);
+      catList.forEach(([c, provs]) => {
+        p(`    ${c} (${provs.size} provider): ${advice[c]}`);
       });
-      const sortedFailures = Object.entries(failureGroups).sort((a, b) => b[1] - a[1]);
-      const maxGroups = 12;
-      sortedFailures.slice(0, maxGroups).forEach(([k, count]) => {
-        p(`    ${S.fail} ${k}: ${count} model`);
-      });
-      if (sortedFailures.length > maxGroups) {
-        p(`    ${col.dim(`+${sortedFailures.length - maxGroups} kelompok lain`)}`);
-      }
+    }
+    if (bad.length || skipped.length) {
       p(`    ${col.dim(`Daftar lengkap: results\\combo-auto-combo.json`)}`);
     }
   }

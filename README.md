@@ -235,6 +235,25 @@ Pola teks limit tambahan juga bisa diberikan lewat variabel `GASPOLL_GUARD_PATTE
 | Guardian menjawab 503 "Belum ada combo" | Jalankan menu `1` dulu supaya `results/combo-auto-combo.json` terbuat. |
 | Karakter aneh atau garis putus-putus di CMD | Gunakan Windows Terminal, atau paksa mode ASCII dengan `--ascii`. |
 
+### Arti hasil tes provider
+
+Ringkasan tes menulis `N lolos, N dilewati (tidak diuji), N gagal`. "Dilewati" berarti model tidak dipanggil sama sekali karena providernya jelas bermasalah. "Gagal" berarti sudah dicoba lalu gagal. Status asli (mis. `[429]`, `[402]`) dibaca dari isi pesan, karena 9Router sering membungkus error provider dengan HTTP 503.
+
+| Gejala di layar | Arti sebenarnya | Yang perlu kamu lakukan | Penanganan GASPOLL |
+| --------------- | --------------- | ----------------------- | ------------------ |
+| `tanpa kredensial` (No active credentials) | Provider belum punya koneksi aktif di 9Router. | Isi API key atau login di dashboard 9Router, atau abaikan provider itu. | Setelah 2 model berbeda gagal dan belum ada yang lolos, sisa model provider dilewati. |
+| `saldo habis` (402, credit balance too low) | Saldo atau kredit akun provider habis. | Isi saldo, atau hapus koneksi yang tidak dipakai. | Sama: 2 model berbeda tanpa yang lolos, sisanya dilewati. |
+| `auth ditolak` (401/403, account disabled) | Key salah, kedaluwarsa, atau akun ditolak. | Cek key, atau login ulang di dashboard 9Router. | 3 model berbeda tanpa yang lolos, sisanya dilewati. |
+| `kuota habis` ([429] exceeded your current quota) | Kuota harian atau kuota model habis, bukan karena tes terlalu cepat. | Tunggu kuota reset, atau pakai provider lain. | Tidak diulang. Model ditandai gagal; provider dilewati hanya bila 4 model berturut-turut kena kuota dan belum ada yang lolos (kuota sebagian provider berlaku per model). |
+| `rate limit` | Terlalu banyak permintaan per menit. | Ulangi nanti, atau pakai `--provider-parallel 1`. | Diulang sampai 3 kali dengan jeda bertambah. Bila 12 kali beruntun, sisa model provider dilewati. |
+| `batasan paket` (not available on Workers Free plan) | Model itu butuh paket berbayar; model lain di provider yang sama bisa tetap jalan. | Abaikan, atau upgrade paket. | Hanya model itu yang gagal. Provider tidak dilewati. |
+| `model dihentikan` (410 Gone) | Model sudah pensiun di provider. | Hapus dari combo. | Hanya model itu yang gagal. |
+| `model tidak ada` (404) | Nama model tidak dikenal provider. | Cek nama modelnya. | Hanya model itu yang gagal. |
+| `timeout` | Provider lambat atau menggantung. | Naikkan `--timeout`, atau abaikan provider itu. | 3 timeout berturut-turut tanpa yang lolos: sisa model dilewati. |
+| `error server` (5xx) | Masalah di provider atau 9Router. | Coba lagi nanti. | 3 error berturut-turut tanpa yang lolos: sisa model dilewati. |
+
+Provider yang sudah punya satu model lolos tidak pernah dilewati penuh. Jumlah model lolos tidak akan naik banyak selama koneksi provider di 9Router masih mati, jadi isi ulang saldo, tunggu kuota reset, login ulang, atau hapus koneksi yang tidak dipakai di dashboard 9Router.
+
 ## Pengujian
 
 ```bash

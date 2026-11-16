@@ -1,5 +1,14 @@
 ﻿# Changelog
 
+## [1.2.9] - 2026-11-16
+- Tes provider (menu [1]) kini membaca penyebab gagal dari isi pesan error, bukan hanya angka status. Status asli yang dibungkus HTTP 503 oleh 9Router (mis. [429], [402]) dibaca dari body, jadi kuota habis tidak lagi berlabel RATE-LIMIT.
+- Kategori baru berteks Indonesia: tanpa kredensial, saldo habis, auth ditolak, kuota habis, rate limit, batasan paket, model dihentikan, model tidak ada, timeout, error server.
+- Pemutus per provider: sisa model provider dilewati (tidak diuji) setelah 2 model berbeda gagal "tanpa kredensial" atau "saldo habis", 3 model berbeda "auth ditolak", 4 kuota habis berturut-turut, atau 3 timeout/error server berturut-turut. Provider yang sudah punya satu model lolos tidak pernah dilewati penuh; 410, 404, dan batasan paket hanya berlaku untuk model itu.
+- Rate limit per menit diulang sampai 3 kali dengan jeda bertambah (setelah 12 kali beruntun sisa model provider dilewati). Kuota habis tidak diulang.
+- Ringkasan tes dan layar hasil (menu [g]) memisahkan lolos, dilewati (tidak diuji), dan gagal, lengkap dengan saran tindakan per kategori. Berkas hasil lama tetap terbaca; hasil baru menambah field category dan skipped.
+- README: bagian "Arti hasil tes provider" pada Pemecahan masalah.
+- Tes baru untuk klasifikasi error, pemutus provider, dan tampilan hasil.
+
 ## [1.2.8] - 2026-11-16
 - Percepatan daftar model: cache lokal (results/models-cache.json) di GASPOLL dan cache in-memory di guardian proxy (GET /v1/models), stale-while-revalidate, timeout bisa di-override lewat GASPOLL_MODELS_TIMEOUT_MS.
 - Menu [3] kini membuat/memperbarui auto-combo (sama seperti menu [1]).

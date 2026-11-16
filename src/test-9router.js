@@ -89,7 +89,7 @@ async function testOnce(id) {
       TIMEOUT_MS
     );
     const ms = Date.now() - started;
-    if (!res.ok) return { id, ok: false, ms, status: res.status, reason: `HTTP ${res.status}: ${L.errText(body, res)}` };
+    if (!res.ok) return { id, ok: false, ms, status: res.status, reason: `HTTP ${res.status}: ${L.errText(body, res)}`, detail: L.errText(body, res, 400) };
     const m = body?.choices?.[0]?.message;
     const text = `${m?.content || ''} ${m?.reasoning_content || ''}`;
     if (!text.trim()) return { id, ok: false, ms, reason: 'respons kosong' };
@@ -100,37 +100,53 @@ async function testOnce(id) {
   }
 }
 
-// Jika provider mengembalikan 429 (rate limit), provider itu dijeda lalu dicoba lagi. Kalau 429 terus
-// berturut-turut, sisa modelnya dilewati supaya tidak membebani provider (dan tidak menghabiskan kuota).
+// Rate limit per menit/detik (RPM) dicoba lagi setelah jeda. Kalau 429 terus berturut-turut, sisa model
+// provider dilewati supaya tidak membebani provider. Kuota habis TIDAK dicoba ulang (percuma).
+// Kegagalan tingkat provider (tanpa kredensial, saldo, auth, timeout beruntun, ...) ditangani
+// pemutus di lib.js: sisa model provider dilewati dan ditandai "dilewati" (tidak diuji).
 const pauseUntil = {};
 const consecutive429 = {};
 const MAX_CONSECUTIVE_429 = 12;
-const consecutiveTimeout = {};
-const MAX_CONSECUTIVE_TIMEOUT = 3;
+const breaker = L.createProviderBreaker();
+
+function skippedResult(id, category) {
+  return { id, ok: false, ms: 0, skipped: true, category, reason: L.skipReason(category) };
+}
 
 async function testModel(id) {
   const p = prefixOf(id);
-  if ((consecutiveTimeout[p] || 0) >= MAX_CONSECUTIVE_TIMEOUT) {
-    return { id, ok: false, ms: 0, reason: 'dilewati: provider timeout berturut-turut (tampaknya menggantung)' };
-  }
+  const early = breaker.check(p);
+  if (early) return skippedResult(id, early.category);
   for (let attempt = 0; attempt < 3; attempt++) {
     if ((consecutive429[p] || 0) >= MAX_CONSECUTIVE_429) {
-      return { id, ok: false, ms: 0, rateLimited: true, reason: 'dilewati: provider kena rate limit, ulangi nanti' };
+      return { id, ok: false, ms: 0, rateLimited: true, skipped: true, category: 'rate limit', reason: 'dilewati: provider kena rate limit, ulangi nanti' };
     }
     const wait = (pauseUntil[p] || 0) - Date.now();
     if (wait > 0) await L.sleep(wait);
+    const mid = breaker.check(p); // provider bisa diputus selagi menunggu
+    if (mid) return skippedResult(id, mid.category);
+
     const r = await testOnce(id);
-    if (!r.ok && RATE_RE.test(r.reason)) {
+    if (r.ok) {
+      consecutive429[p] = 0;
+      breaker.record(p, id, r);
+      return r;
+    }
+    const c = L.classifyTestFailure(r.detail || r.reason, r.status);
+    if (c.retry) {
       consecutive429[p] = (consecutive429[p] || 0) + 1;
       pauseUntil[p] = Date.now() + RETRY_MS * (attempt + 1);
       if (attempt < 2) continue;
-      return { ...r, rateLimited: true, reason: `RATE-LIMIT ${r.reason}` };
+      const fin = { ...r, rateLimited: true, category: c.category, reason: `RATE-LIMIT ${r.reason}` };
+      breaker.record(p, id, fin);
+      return fin;
     }
     consecutive429[p] = 0;
-    consecutiveTimeout[p] = !r.ok && /^timeout/.test(r.reason) ? (consecutiveTimeout[p] || 0) + 1 : 0;
-    return r;
+    const fin = { ...r, category: c.category };
+    breaker.record(p, id, fin);
+    return fin;
   }
-  return { id, ok: false, ms: 0, reason: 'error tak terduga' };
+  return { id, ok: false, ms: 0, category: 'error lain', reason: 'error tak terduga' };
 }
 
 // ---------------------------------------------------------------- susun combo
@@ -188,7 +204,7 @@ function providerSummary(results, chosen) {
     e.total++;
     if (r.ok) e.ok++;
     else {
-      const k = UI.shortenReason(r.reason) || 'error lain';
+      const k = r.category || UI.shortenReason(r.reason) || 'error lain';
       e.reasons[k] = (e.reasons[k] || 0) + 1;
     }
   }
@@ -227,6 +243,25 @@ function providerSummary(results, chosen) {
     wrapEntries(entries, width, '  ').forEach((l) => L.line(l));
     if (process.env.GASPOLL_FROM_MENU === '1') L.line(col.dim('  Detail per alasan: Riwayat & log > Yang gagal'));
   }
+  adviceSummary(results);
+}
+
+// Ringkas tindakan yang perlu dilakukan user, berdasarkan kategori kegagalan yang paling banyak.
+function adviceSummary(results) {
+  const cats = {};
+  for (const r of results) {
+    if (r.ok || !r.category || !L.CATEGORY_ADVICE[r.category]) continue;
+    const c = (cats[r.category] = cats[r.category] || { models: 0, providers: new Set() });
+    c.models++;
+    c.providers.add(prefixOf(r.id) || '-');
+  }
+  const rows = Object.entries(cats).sort((a, b) => b[1].models - a[1].models).slice(0, 5);
+  if (!rows.length) return;
+  const s = UI.sym();
+  L.line('');
+  L.line(col.cyan(col.bold('  SARAN')));
+  L.line(col.dim('  ' + s.horiz.repeat(56)));
+  rows.forEach(([k, v]) => L.line(`  - ${k} (${v.providers.size} provider, ${v.models} model): ${L.CATEGORY_ADVICE[k]}`));
 }
 
 // ---------------------------------------------------------------- main
@@ -240,18 +275,18 @@ function nextSteps(extra = []) {
 }
 
 // Tulis ringkasan terakhir ke results/last-run.json (dipakai oleh cli.js untuk jurnal)
-function writeLastRun({ ok, passed, failed, duration, combo, comboApplied }) {
+function writeLastRun({ ok, passed, failed, skipped = 0, duration, combo, comboApplied }) {
   try {
     const s = UI.sym();
     const summary = [
-      ok ? `${passed} lolos ${s.mid} ${failed} gagal` : 'gagal',
+      ok ? `${passed} lolos ${s.mid} ${failed} gagal${skipped ? ` ${s.mid} ${skipped} dilewati` : ''}` : 'gagal',
       comboApplied ? `${combo} diperbarui (${comboApplied} model)` : null,
       `durasi ${L.fmtDur(duration)}`,
     ].filter(Boolean).join(` ${s.mid} `);
     const p = L.inResults('last-run.json');
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, JSON.stringify({
-      ok, passed, failed, duration,
+      ok, passed, failed, skipped, duration,
       combo: combo || null,
       comboApplied: comboApplied || 0,
       summary,
@@ -355,7 +390,7 @@ async function main() {
         : r.rateLimited || /429|rate/i.test(r.reason || '')
           ? col.yellow(`${s.warn}  `)
           : col.red(`${s.fail}  `);
-      const reason = r.reason ? col.dim(UI.shortenReason(r.reason)) : '';
+      const reason = r.reason ? col.dim(r.category ? (r.skipped ? `dilewati: ${r.category}` : r.category) : UI.shortenReason(r.reason)) : '';
       const verbose = has('verbose') || process.env.GASPOLL_VERBOSE === '1';
       const isQuiet = (process.env.GASPOLL_FROM_MENU === '1' || has('quiet-fail')) && !verbose;
       if (r.ok || !isQuiet) {
@@ -365,7 +400,7 @@ async function main() {
         if (logFile) {
           try {
             const s = UI.sym();
-            fs.appendFileSync(logFile, `[${done}/${models.length}] ${s.fail} ${id}  ${r.reason}\n`, 'utf8');
+            fs.appendFileSync(logFile, `[${done}/${models.length}] ${s.fail} ${id}  ${r.category ? `[${r.category}] ` : ''}${r.reason}\n`, 'utf8');
           } catch {}
         }
       }
@@ -387,21 +422,23 @@ async function main() {
 
   L.line('');
   const passed = results.filter((r) => r.ok);
-  const failed = results.filter((r) => !r.ok);
+  const skippedR = results.filter((r) => !r.ok && r.skipped);
+  const failed = results.filter((r) => !r.ok && !r.skipped);
   const totalMs = Date.now() - t0;
 
-  L.line(`  HASIL: ${col.green(`${passed.length} lolos`)}, ${failed.length ? col.red(`${failed.length} gagal`) : '0 gagal'}, waktu ${L.fmtDur(totalMs)}`);
+  const skipTxt = skippedR.length ? `, ${skippedR.length} dilewati (tidak diuji)` : '';
+  L.line(`  HASIL: ${col.green(`${passed.length} lolos`)}, ${failed.length ? col.red(`${failed.length} gagal`) : '0 gagal'}, waktu ${L.fmtDur(totalMs)}${skipTxt}`);
 
   if (!passed.length) {
     providerSummary(results, []);
     const auth = results.filter((r) => r.status === 401 || r.status === 403).length;
-    if (auth > results.length / 2) L.line(col.red('Hampir semua ditolak 401/403: API key salah. Ganti lewat menu [7].'));
+    if (auth > (results.length - skippedR.length) / 2) L.line(col.red('Hampir semua ditolak 401/403: API key salah. Ganti lewat menu [7].'));
     L.line(col.red('Tidak ada model yang lolos, combo tidak dibuat.'));
-    writeLastRun({ ok: false, passed: 0, failed: failed.length, duration: totalMs, combo: null, comboApplied: 0 });
+    writeLastRun({ ok: false, passed: 0, failed: failed.length, skipped: skippedR.length, duration: totalMs, combo: null, comboApplied: 0 });
     process.exitCode = 1;
     return;
   }
-  writeLastRun({ ok: false, passed: passed.length, failed: failed.length, duration: totalMs, combo: COMBO_NAME, comboApplied: 0 });
+  writeLastRun({ ok: false, passed: passed.length, failed: failed.length, skipped: skippedR.length, duration: totalMs, combo: COMBO_NAME, comboApplied: 0 });
   const pool = INCLUDE_WEAK ? passed : passed.filter((r) => r.smart);
   if (!pool.length) {
     L.line(col.red('Semua yang lolos ternyata lemah (jawaban hitungan salah).'));
@@ -451,13 +488,13 @@ fs.writeFileSync(FILE, JSON.stringify({ name: COMBO_NAME, models: chosen, tested
   if (has('create')) {
     const ok = await L.applyCombos(cfg, { [COMBO_NAME]: chosen });
     if (!ok) L.line(col.yellow('Buat manual di Dashboard > Combos, lalu paste urutan model di atas.'));
-    writeLastRun({ ok: true, passed: passed.length, failed: failed.length, duration: totalMs, combo: COMBO_NAME, comboApplied: chosen.length });
+    writeLastRun({ ok: true, passed: passed.length, failed: failed.length, skipped: skippedR.length, duration: totalMs, combo: COMBO_NAME, comboApplied: chosen.length });
   } else {
     nextSteps([
       ['Buat combo di 9Router dari hasil ini:', `node ${L.relCmd('test-9router.js')} --apply --name ${COMBO_NAME}`],
       ['Lanjut benchmark agent coding:', `node ${L.relCmd('bench-9router.js')}`],
     ]);
-    writeLastRun({ ok: true, passed: passed.length, failed: failed.length, duration: totalMs, combo: COMBO_NAME, comboApplied: 0 });
+    writeLastRun({ ok: true, passed: passed.length, failed: failed.length, skipped: skippedR.length, duration: totalMs, combo: COMBO_NAME, comboApplied: 0 });
   }
 }
 
