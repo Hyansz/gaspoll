@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## [1.2.8] - 2026-11-16
+- Percepatan daftar model: cache lokal (results/models-cache.json) di GASPOLL dan cache in-memory di guardian proxy (GET /v1/models), stale-while-revalidate, timeout bisa di-override lewat GASPOLL_MODELS_TIMEOUT_MS.
+- Menu [3] kini membuat/memperbarui auto-combo (sama seperti menu [1]).
+
 ## [1.2.7] - 2026-11-12
 - Menu utama ditata ulang: tombol 1 sampai 8 berurutan (UTAMA berisi 1-4, ALAT berisi 5-8), dan [g] Riwayat serta [q] Keluar di baris sendiri.
 - Gambar menu di README diperbarui dan kini menampilkan menu [8].
