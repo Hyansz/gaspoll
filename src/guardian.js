@@ -427,6 +427,102 @@ function createGuardian(userOpts = {}) {
 
   // ------------------------------------------------ request klien
 
+  // Cache in-memory untuk GET /v1/models
+  const MODELS_CACHE_TTL_MS = parseInt(process.env.GASPOLL_GUARD_MODELS_TTL_MS, 10) || 60_000; // segar
+  const MODELS_CACHE_STALE_MS = parseInt(process.env.GASPOLL_GUARD_MODELS_STALE_MS, 10) || 3_600_000; // stale
+  const modelsCache = new Map(); // hash(auth) -> { fetchedAt, body, ct }
+  const modelsInflight = new Map(); // hash(auth) -> Promise
+
+  function authKey(auth) {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(auth || '').digest('hex').slice(0, 16);
+  }
+
+  async function fetchModelsCached(auth, res, req) {
+    const key = authKey(auth);
+    const now = Date.now();
+    const hit = modelsCache.get(key);
+
+    // Injeksi model virtual guardian ke body (jaga-jaga, idempoten)
+    const injectVirtual = (text) => {
+      try {
+        const j = JSON.parse(text);
+        if (j && Array.isArray(j.data)) {
+          if (!j.data.some((m) => m.id === o.virtualModel)) {
+            j.data.unshift({ id: o.virtualModel, object: 'model', owned_by: 'guardian' });
+            return JSON.stringify(j);
+          }
+        }
+      } catch { /* bukan JSON, teruskan apa adanya */ }
+      return text;
+    };
+
+    // Cache segar: kembalikan dari memori
+    if (hit && now - hit.fetchedAt < MODELS_CACHE_TTL_MS) {
+      res.writeHead(200, { 'Content-Type': hit.ct, 'X-Guardian-Cache': 'HIT' });
+      res.end(hit.body);
+      return;
+    }
+
+    // Cache stale (60d - 1j): kembalikan cache, refresh di latar belakang
+    if (hit && now - hit.fetchedAt < MODELS_CACHE_STALE_MS) {
+      res.writeHead(200, { 'Content-Type': hit.ct, 'X-Guardian-Cache': 'STALE' });
+      res.end(hit.body);
+      // Refresh di latar belakang (in-flight dedupe)
+      if (!modelsInflight.has(key)) {
+        const p = (async () => {
+          const r = await fetch(`${upstream}/v1/models`, {
+            method: 'GET',
+            headers: { ...(auth ? { Authorization: auth } : {}) },
+          });
+          if (r.ok) {
+            const raw = await r.text();
+            const ct = r.headers.get('content-type') || 'application/json';
+            modelsCache.set(key, { fetchedAt: Date.now(), body: injectVirtual(raw), ct });
+          }
+        })();
+        modelsInflight.set(key, p);
+        p.finally(() => modelsInflight.delete(key));
+      }
+      return;
+    }
+
+    // Cache MISS: fetch dari upstream
+    try {
+      const r = await fetch(`${upstream}/v1/models`, {
+        method: 'GET',
+        headers: { ...(auth ? { Authorization: auth } : {}) },
+      });
+      if (r.ok) {
+        const ct = r.headers.get('content-type') || 'application/json';
+        const raw = await r.text();
+        const body = injectVirtual(raw);
+        modelsCache.set(key, { fetchedAt: Date.now(), body, ct });
+        res.writeHead(200, { 'Content-Type': ct, 'X-Guardian-Cache': 'MISS' });
+        res.end(body);
+        return;
+      } else {
+        // Error upstream: kirim cache lama kalau ada
+        if (hit) {
+          res.writeHead(200, { 'Content-Type': hit.ct, 'X-Guardian-Cache': 'STALE' });
+          res.end(hit.body);
+        } else {
+          res.writeHead(r.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: `Upstream /v1/models: HTTP ${r.status}` } }));
+        }
+      }
+    } catch (e) {
+      // Network error: kirim cache lama kalau ada
+      if (hit) {
+        res.writeHead(200, { 'Content-Type': hit.ct, 'X-Guardian-Cache': 'STALE' });
+        res.end(hit.body);
+      } else {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: `Guardian tidak bisa menghubungi 9Router: ${e.message}`, type: 'guardian_router_down' } }));
+      }
+    }
+  }
+
   function sseHead(res, modelId) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no',
@@ -562,6 +658,12 @@ function createGuardian(userOpts = {}) {
 
   async function passthrough(req, res, bodyBuf) {
     const auth = req.headers.authorization || (cfg.apiKey ? `Bearer ${cfg.apiKey}` : '');
+
+    // Handle GET /v1/models with cache
+    if (req.method === 'GET' && req.url.split('?')[0] === '/v1/models') {
+      return fetchModelsCached(auth, res, req);
+    }
+
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
     let resp;
@@ -577,17 +679,6 @@ function createGuardian(userOpts = {}) {
       return;
     }
     const ct = resp.headers.get('content-type') || 'application/octet-stream';
-    if (req.method === 'GET' && req.url.split('?')[0] === '/v1/models' && /json/i.test(ct) && resp.ok) {
-      const text = await resp.text();
-      try {
-        const j = JSON.parse(text);
-        if (j && Array.isArray(j.data)) {
-          j.data.unshift({ id: o.virtualModel, object: 'model', owned_by: 'guardian' });
-          return sendJson(res, 200, j);
-        }
-      } catch { /* teruskan apa adanya */ }
-      res.writeHead(resp.status, { 'Content-Type': ct }); res.end(text); return;
-    }
     res.writeHead(resp.status, { 'Content-Type': ct });
     if (!resp.body) { res.end(); return; }
     const rd = makeReader(resp.body.getReader());
@@ -735,6 +826,10 @@ function createGuardian(userOpts = {}) {
     if (watcher) { try { watcher.close(); } catch { /* already closed */ } }
     clearInterval(tickTimer); clearInterval(routerTimer); clearTimeout(saveTimer); saveTimer = null;
     saveStateNow();
+    // Bersihkan cache model (in-flight refresh dibuang supaya tidak menahan proses)
+    modelsCache.clear();
+    for (const p of modelsInflight.values()) { try { p.catch(() => {}); } catch { /* sudah selesai */ } }
+    modelsInflight.clear();
     await new Promise((resolve) => {
       if (!server.listening) return resolve();
       server.close(() => resolve());

@@ -388,25 +388,121 @@ async function checkRouter(cfg, timeoutMs = 5000) {
 const SKIP_MODEL_DEFAULT =
   'parakeet|whisper|embed|rerank|(^|[-/_])(asr|tts)($|[-/_.])|image|voxtral|audio|safeguard|guard|lyria|:batch|llama-3\\.2-(1b|3b)';
 
-async function fetchAllModelIds(cfg) {
-  let r;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      r = await fetchJson(`${cfg.baseUrl}/v1/models`, { headers: authHeaders(cfg) }, 60000);
-      break;
-    } catch (e) {
-      if (e.code !== 'TIMEOUT') throw new Error(`Tidak bisa menghubungi 9Router: ${e.message}`);
-      if (attempt === 1) {
-        throw new Error(`9Router tidak mengirim daftar model dalam 60 detik. Kemungkinan ada provider yang menggantung. Coba buka ${cfg.baseUrl}/v1/models di browser.`);
-      }
-      line(col.yellow('Daftar model lambat, mencoba sekali lagi...'));
+// Cache model IDs
+const MODELS_CACHE_FILE = path.join(RESULTS, 'models-cache.json');
+const MODELS_CACHE_FRESH_MS = 60_000;       // 60 detik: pakai cache, tanpa jaringan
+const MODELS_CACHE_STALE_MS = 24 * 3_600_000; // 24 jam: stale-while-revalidate
+const MODELS_FETCH_TIMEOUT_MS = () => {
+  const env = parseInt(process.env.GASPOLL_MODELS_TIMEOUT_MS, 10);
+  return Number.isFinite(env) && env > 0 ? env : 15000;
+};
+const MODELS_CACHE_INFLIGHT = new Map(); // key -> Promise (dedupe in-flight)
+
+// Hash sederhana untuk kunci cache (tanpa menulis API key)
+function modelCacheKey(baseUrl, apiKey) {
+  const crypto = require('crypto');
+  const keyHash = crypto.createHash('sha256').update(String(apiKey || '')).digest('hex').slice(0, 16);
+  return `${baseUrl}|${keyHash}`;
+}
+
+// Baca cache (atomik, toleran terhadap file rusak)
+function readModelsCache() {
+  try {
+    if (!fs.existsSync(MODELS_CACHE_FILE)) return { version: 1, entries: {} };
+    const raw = fs.readFileSync(MODELS_CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== 'object') {
+      return { version: 1, entries: {} };
     }
+    return parsed;
+  } catch {
+    return { version: 1, entries: {} };
   }
+}
+
+// Tulis cache (atomik: .tmp lalu rename)
+function writeModelsCache(cache) {
+  try {
+    const tmp = MODELS_CACHE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cache, null, 2), 'utf8');
+    fs.renameSync(tmp, MODELS_CACHE_FILE);
+  } catch { /* tulis cache gagal: tidak fatal */ }
+}
+
+// Ambil model dari 9Router (fetch asli, tanpa cache)
+async function fetchModelsFromRouter(cfg, timeoutMs) {
+  const r = await fetchJson(`${cfg.baseUrl}/v1/models`, { headers: authHeaders(cfg) }, timeoutMs);
   const { res, body } = r;
   if (res.status === 401 || res.status === 403) throw new Error(`API key ditolak (HTTP ${res.status}). Ganti lewat menu [7] di gaspoll.bat.`);
   if (!res.ok) throw new Error(`GET /v1/models gagal (HTTP ${res.status}). Cek alamat router dan API key.`);
   if (!body || !Array.isArray(body.data)) throw new Error('Respons /v1/models bukan daftar model yang valid.');
   return body.data.filter((m) => m.owned_by !== 'combo' && m.type !== 'combo').map((m) => m.id);
+}
+
+async function fetchAllModelIds(cfg) {
+  const key = modelCacheKey(cfg.baseUrl, cfg.apiKey);
+  const noCache = process.env.GASPOLL_NO_MODELS_CACHE === '1';
+  const timeoutMs = MODELS_FETCH_TIMEOUT_MS();
+  const cache = readModelsCache();
+  const entry = cache.entries[key];
+  const now = Date.now();
+
+  // 1. Cache segar (< 60 detik): kembalikan cache, tanpa jaringan
+  if (!noCache && entry && now - entry.fetchedAt < MODELS_CACHE_FRESH_MS) {
+    return entry.ids;
+  }
+
+  // 2. Cache stale (60 dtk - 24 jam): kembalikan cache segera, refresh di latar belakang
+  if (!noCache && entry && entry.ids && entry.ids.length > 0 && now - entry.fetchedAt < MODELS_CACHE_STALE_MS) {
+    // In-flight dedupe: kalau sudah ada refresh yang sedang jalan, pakai itu
+    if (MODELS_CACHE_INFLIGHT.has(key)) {
+      return entry.ids; // kembalikan cache, refresh sudah berjalan
+    }
+    // Mulai refresh di latar belakang (tidak menahan)
+    const refreshPromise = fetchModelsFromRouter(cfg, timeoutMs)
+      .then((ids) => {
+        if (ids && ids.length > 0) {
+          const freshCache = readModelsCache();
+          freshCache.entries[key] = { fetchedAt: Date.now(), ids };
+          writeModelsCache(freshCache);
+        }
+      })
+      .catch(() => { /* refresh gagal: pakai cache lama */ })
+      .finally(() => MODELS_CACHE_INFLIGHT.delete(key));
+    MODELS_CACHE_INFLIGHT.set(key, refreshPromise);
+    return entry.ids;
+  }
+
+  // 3. Tidak ada cache / cache > 24 jam / noCache: fetch biasa (menunggu)
+  // Cetak pesan jika fetch membutuhkan waktu
+  const fetchStart = Date.now();
+  let slowMsgShown = false;
+  const slowTimer = setTimeout(() => {
+    slowMsgShown = true;
+    line(col.yellow('Memuat daftar model dari 9Router (pertama kali bisa lama bila model banyak)...'));
+  }, 2000);
+
+  let ids;
+  try {
+    ids = await fetchModelsFromRouter(cfg, timeoutMs);
+  } catch (e) {
+    clearTimeout(slowTimer);
+    // Fetch gagal: pakai cache lama kalau ada
+    if (entry && entry.ids && entry.ids.length > 0) {
+      line(col.yellow(`Fetch gagal, memakai cache lama (${Math.round((now - entry.fetchedAt) / 60000)} menit lalu).`));
+      return entry.ids;
+    }
+    if (e.message && (e.message.includes('timeout') || e.message.includes(`dalam ${Math.round(timeoutMs / 1000)} detik`))) {
+      throw new Error(`9Router belum membalas /v1/models dalam ${Math.round(timeoutMs / 1000)} detik. Coba lagi atau naikkan GASPOLL_MODELS_TIMEOUT_MS.`);
+    }
+    throw e;
+  }
+  clearTimeout(slowTimer);
+
+  // 4. Tulis cache baru
+  cache.entries[key] = { fetchedAt: Date.now(), ids };
+  writeModelsCache(cache);
+  return ids;
 }
 
 // Varian -thinking / -agentic dianggap model yang sama; ambil versi paling polos saja.
@@ -607,5 +703,6 @@ module.exports = {
   col, stripAnsi, status, line, pad, lpad, rule, heading, fmtTime, fmtDur, cmdLine, UI,
   startLog, lastLogPath, copyText, openPath,
   fetchJson, errText, checkRouter, SKIP_MODEL_DEFAULT, fetchAllModelIds, dropVariants,
+  modelCacheKey, // export untuk test
   runPool, runByProvider, dashboardCookie, saveCombo, applyCombos, installCrashHandlers,
 };
