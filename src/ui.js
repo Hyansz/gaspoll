@@ -642,26 +642,69 @@ function blockWidth(w, hasSmoke) {
   return Math.min(w, 76);
 }
 
-// tagLine: "Tes provider · Benchmark coding · Susun combo" + versi rata kanan.
-// Jika tagline + versi tidak muat dalam termW, hanya tampilkan tagline (versi dipotong).
-function tagLine(version, termW) {
+// tagLine: "Tes provider · Benchmark coding · Susun combo" + versi/badge rata kanan.
+// Badge update (opsional) mengikuti versi: "v1.2.9 [OK]" atau "v1.2.9 -> v1.2.10 [UPD]".
+// Jika tidak muat, tagline yang dibuang dan versi/badge tetap tampil rata kanan.
+function vNum(version) {
+  return String(version == null ? '' : version).replace(/^v/, '');
+}
+
+// Bandingkan versi numerik sederhana (1.2.10 > 1.2.9). Bagian non-angka
+// diabaikan; cukup untuk memutuskan arah panah di badge.
+function compareVersion(a, b) {
+  const parse = (v) => vNum(v).split(/[.+-]/).map((x) => parseInt(x, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da !== db) return da > db ? 1 : -1;
+  }
+  return 0;
+}
+
+// [OK] / [UPD] / [?] - ASCII murni supaya aman di terminal lama.
+function updateBadge(update) {
+  const state = update && update.state ? String(update.state) : '';
+  if (state === 'update') return { text: '[UPD]', tone: 'update' };
+  if (state === 'ok' || state === 'ahead') return { text: '[OK]', tone: 'ok' };
+  return { text: '[?]', tone: 'unknown' };
+}
+
+function versionParts(version, update) {
+  const base = 'v' + vNum(version);
+  if (!update || !update.state) return { plain: base, styled: c.gray(base), tone: '' };
+  const b = updateBadge(update);
+  // Panah hanya bila versi GitHub memang lebih baru; kalau versi lokal lebih
+  // tinggi (mis. build belum dirilis) cukup tampilkan badge [UPD].
+  if (b.tone === 'update' && update.remoteVersion && compareVersion(update.remoteVersion, version) > 0) {
+    const left = `${base} -> v${vNum(update.remoteVersion)}`;
+    return { plain: `${left} ${b.text}`, styled: c.gray(left) + ' ' + c.accent(b.text), tone: b.tone };
+  }
+  const badgeStyled = b.tone === 'update' ? c.accent(b.text) : c.gray(b.text);
+  return { plain: `${base} ${b.text}`, styled: c.gray(base) + ' ' + badgeStyled, tone: b.tone };
+}
+
+function tagLine(version, termW, update) {
   const m = LAYOUT.margin;
   const s = sym();
-  const vStr = String(version).startsWith('v') ? String(version) : 'v' + String(version);
   const tag = `Tes provider ${s.mid} Benchmark coding ${s.mid} Susun combo`;
   const smoke = smokeFor(termW);
   const bw = blockWidth(termW, !!smoke);
   const maxW = bw - m;
+  const parts = versionParts(version, update);
   const tagVW = visualWidth(tag);
-  const verVW = visualWidth(vStr);
-  const totalNeed = tagVW + 1 + verVW;
-  if (totalNeed > maxW) {
-    // Tidak muat: potong tagline jika perlu, abaikan versi
-    const tagTrunc = tag.slice(0, Math.max(0, maxW));
-    return ' '.repeat(m) + c.gray(tagTrunc);
+  const verVW = visualWidth(parts.plain);
+  if (tagVW + 1 + verVW <= maxW) {
+    const gap = maxW - tagVW - verVW;
+    return ' '.repeat(m) + c.gray(tag) + ' '.repeat(gap) + parts.styled;
   }
-  const gap = maxW - tagVW - verVW;
-  return ' '.repeat(m) + c.gray(tag) + ' '.repeat(gap) + c.gray(vStr);
+  if (verVW <= maxW) {
+    return ' '.repeat(m) + ' '.repeat(maxW - verVW) + parts.styled;
+  }
+  const trunc = truncate(parts.plain, maxW);
+  return ' '.repeat(m) + ' '.repeat(Math.max(0, maxW - visualWidth(trunc))) + c.gray(trunc);
 }
 
 // ---------------------------------------------------------------- render menu (SATU fungsi untuk menu asli & pratinjau)
@@ -671,6 +714,7 @@ function renderMenu(data, opts = {}) {
   const s = sym();
   const out = [];
   const w = opts.width || getTermWidth();
+  const upd = data ? data.update : null;
   const twoCol = w >= 76;
   const m = LAYOUT.margin, c2 = LAYOUT.col2Start;
   const rows = process.stdout && process.stdout.rows ? process.stdout.rows : 40;
@@ -695,20 +739,19 @@ function renderMenu(data, opts = {}) {
   const dashLine = ' '.repeat(m) + c.border(dash.repeat(Math.max(10, bw - m)));
 
   if (useCompact) {
-    const versionRaw = String(opts.version || getVersion());
-    const versionStr = versionRaw.startsWith('v') ? versionRaw : 'v' + versionRaw;
     const tag = `Tes provider ${s.mid} Benchmark coding ${s.mid} Susun combo`;
     const maxW = Math.max(10, bw - m);
+    const parts = versionParts(opts.version || getVersion(), upd);
     const tagVW = visualWidth(tag);
-    const verVW = visualWidth(versionStr);
-    const totalNeed = tagVW + 1 + verVW;
+    const verVW = visualWidth(parts.plain);
     out.push('  ' + c.whiteBold('GASPOLL'));
-    if (totalNeed > maxW) {
-      const tagTrunc = tag.slice(0, Math.max(0, maxW));
-      out.push(' '.repeat(m) + c.gray(tagTrunc));
+    if (tagVW + 1 + verVW <= maxW) {
+      out.push(' '.repeat(m) + c.gray(tag) + ' '.repeat(maxW - tagVW - verVW) + parts.styled);
+    } else if (verVW <= maxW) {
+      out.push(' '.repeat(m) + ' '.repeat(maxW - verVW) + parts.styled);
     } else {
-      const gap = Math.max(0, maxW - tagVW - verVW);
-      out.push(' '.repeat(m) + c.gray(tag) + ' '.repeat(gap) + c.gray(versionStr));
+      const trunc = truncate(parts.plain, maxW);
+      out.push(' '.repeat(m) + ' '.repeat(Math.max(0, maxW - visualWidth(trunc))) + c.gray(trunc));
     }
   } else {
     // --- banner: 1 baris kosong, banner (solid/classic atau satu baris bingkai), 1 baris kosong
@@ -725,8 +768,8 @@ function renderMenu(data, opts = {}) {
     }
     out.push('');
 
-    // --- tagline + versi rata kanan
-    out.push(tagLine(String(opts.version || getVersion()).replace(/^v/, ''), w));
+    // --- tagline + versi/badge rata kanan
+    out.push(tagLine(String(opts.version || getVersion()).replace(/^v/, ''), w, upd));
   }
 
   // --- blok status: 1 garis, 3 baris status, 1 garis
@@ -754,7 +797,7 @@ function renderMenu(data, opts = {}) {
   }
 
   // --- menu
-  const sug = suggestMenu(alive, data.t, data.b, data.apiKey);
+  const sug = suggestMenu(alive, data.t, data.b, data.apiKey, upd);
   const keycap = (k) => sug.key === k ? c.keycap(k) : c.silver(`[${k}]`);
   const item = (k, label) => `  ${keycap(k)} ${c.white(label)}`;
 
@@ -767,6 +810,7 @@ function renderMenu(data, opts = {}) {
     out.push(gridLine(item('2', 'Benchmark agent coding'), item('6', 'Ulangi benchmark 1 provider')));
     out.push(gridLine(item('3', 'Tes + benchmark berurutan'), item('7', 'Pengaturan')));
     out.push(gridLine(item('4', 'Lihat hasil terakhir'), item('8', 'Realtime bot guardian')));
+    out.push(gridLine('', item('u', 'Cek update tool')));
     out.push('');
     out.push(gridLine(c.gray('[g] Riwayat & log'), c.gray('[q] Keluar')));
   } else {
@@ -779,6 +823,7 @@ function renderMenu(data, opts = {}) {
     out.push(item('6', 'Ulangi benchmark 1 provider'));
     out.push(item('7', 'Pengaturan'));
     out.push(item('8', 'Realtime bot guardian'));
+    out.push(item('u', 'Cek update tool'));
     out.push(item('g', 'Riwayat & log'));
     out.push(c.gray(' '.repeat(m) + '[q] Keluar'));
   }
@@ -862,16 +907,20 @@ function renderMenu(data, opts = {}) {
     saranLine.forEach(l => out.push(l));
   }
   out.push('');
-  const brackets = c.gray('[1-8, g, q]');
+  const brackets = c.gray('[1-8, u, g, q]');
   out.push(' '.repeat(m) + c.gray('Pilih ') + brackets + ' ' + c.accent(s.arrow) + ' ');
   return out;
 }
 
 // Logika saran (dipakai menu asli & pratinjau)
-function suggestMenu(alive, t, b, apiKey) {
+function suggestMenu(alive, t, b, apiKey, update) {
   const host = String(alive.baseUrl || 'localhost:20128');
   if (!alive.ok) return { key: null, text: `Saran: 9Router belum jalan di ${host}. Jalankan dulu, lalu tekan Enter.` };
   if (!apiKey) return { key: '7', text: 'Saran: tekan 7 untuk mengisi API key' };
+  if (update && update.state === 'update') {
+    const v = update.remoteVersion ? `, GitHub v${vNum(update.remoteVersion)}` : '';
+    return { key: 'u', text: `Saran: tekan u (update tersedia${v})` };
+  }
   if (!t) return { key: '1', text: 'Saran: tekan 1 (belum pernah tes provider)' };
   if (!b || (t.tested_at && b.tested_at && new Date(t.tested_at) > new Date(b.tested_at))) {
     return { key: '2', text: !b ? 'Saran: tekan 2 (belum pernah benchmark)' : 'Saran: tekan 2 (tes lebih baru dari benchmark)' };
@@ -909,7 +958,7 @@ module.exports = {
   c, sym, hr, bannerLine, renderBanner, BANNER_LINES, BANNER_ART,
   SOLID_256, SHADOW_256, bannerVariant, solidBannerLines, flatBannerLines, bannerRowCount, buildShadowGrid,
   LAYOUT, padTo, gridLine, statusLine, tagLine,
-  renderMenu, suggestMenu, wrapLegend,
+  renderMenu, suggestMenu, wrapLegend, updateBadge, versionParts,
   colors, stripAnsi, visualWidth, truncate,
   box, badge, kv, bar, relativeTime, shortenReason, failureKind, FAIL_HINT,
 };

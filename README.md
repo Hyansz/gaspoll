@@ -13,7 +13,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![Tanpa dependensi](https://img.shields.io/badge/dependensi-0-brightgreen)
 
-[Fitur](#fitur) · [Instalasi](#instalasi) · [Menjalankan](#menjalankan) · [Realtime bot guardian](#realtime-bot-guardian) · [Pemecahan masalah](#pemecahan-masalah) · [Riwayat perubahan](CHANGELOG.md)
+[Fitur](#fitur) · [Instalasi](#instalasi) · [Menjalankan](#menjalankan) · [Realtime bot guardian](#realtime-bot-guardian) · [Update tool](#update-tool) · [Pemecahan masalah](#pemecahan-masalah) · [Riwayat perubahan](CHANGELOG.md)
 
 </div>
 
@@ -35,6 +35,7 @@ Untuk pemakaian sehari-hari, menu **Realtime bot guardian** menjaga klien sepert
 | Ulangi benchmark per provider | Tidak perlu menjalankan ulang semuanya. |
 | Riwayat dan log | Lihat hasil lama, buka detail, dan salin log. |
 | Realtime bot guardian | Perantara lokal dengan layar live dan failover otomatis antar model. |
+| Cek update otomatis | Badge `[OK]`/`[UPD]` di samping versi, dicek sekali per jam, lalu pembaruan dengan `git pull`. |
 | Tampilan adaptif | Unicode di terminal modern, ASCII otomatis di CMD, layout menyesuaikan lebar terminal. |
 | Lintas platform | Windows, Linux, dan macOS. Diuji otomatis lewat CI di ketiganya. |
 | Tanpa dependensi | Cukup Node.js. Tidak ada `npm install`. |
@@ -46,7 +47,7 @@ Untuk pemakaian sehari-hari, menu **Realtime bot guardian** menjaga klien sepert
 | Node.js | Versi 18 atau lebih baru. CI menguji Node.js 18, 20, dan 22. |
 | 9Router | Harus sudah berjalan (alamat bawaan `http://localhost:20128`). |
 | Akses 9Router | API key aktif atau password dashboard 9Router. |
-| Git | Opsional, hanya untuk instalasi lewat `git clone`. |
+| Git | Opsional. Diperlukan untuk pembaruan lewat menu `[u]` (menjalankan `git pull`); tanpa git, perbarui manual dari GitHub. |
 
 > GASPOLL dikembangkan di Windows. `gaspoll.bat` khusus Windows, `gaspoll.sh` untuk Linux dan macOS, dan `node src/cli.js` bisa dijalankan dari terminal mana pun yang punya Node.js.
 
@@ -117,6 +118,7 @@ Di Linux, salin ke clipboard butuh salah satu dari `wl-copy`, `xclip`, atau `xse
 | `6` | Ulangi benchmark 1 provider |
 | `7` | Pengaturan |
 | `8` | Realtime bot guardian |
+| `u` | Cek update tool (juga bisa ketik `update` atau `/update`) |
 | `g` | Riwayat dan log |
 | `q` | Keluar |
 
@@ -140,6 +142,10 @@ node src/cli.js --unicode    # paksa Unicode
 | `GASPOLL_VERBOSE=1` | Tampilkan keluaran tes selengkapnya, tanpa ringkasan |
 | `GASPOLL_RESULTS=<folder>` | Simpan hasil dan riwayat di folder lain |
 | `GASPOLL_CONFIG=<berkas>` | Pakai berkas konfigurasi lain |
+| `GASPOLL_UPDATE_INTERVAL_MS=<ms>` | Jeda cek update otomatis (bawaan 60 menit) |
+| `GASPOLL_UPDATE_OFF=1` | Matikan cek update dan badge otomatis |
+| `GASPOLL_UPDATE_CHECK=1` | Paksa cek update meski keluaran tidak lewat terminal (mis. skrip) |
+| `GASPOLL_GITHUB_TOKEN=<token>` | Token GitHub opsional untuk menaikkan batas permintaan API |
 
 Terminal pendek (kurang dari 30 baris) otomatis memakai header ringkas.
 
@@ -220,6 +226,26 @@ Pola teks limit tambahan juga bisa diberikan lewat variabel `GASPOLL_GUARD_PATTE
 - Klien yang memakai format `/v1/messages` (misalnya Claude Code) belum didukung.
 - Pola teks limit bersifat umum. Bila sebuah provider memakai kalimat limit yang tidak dikenali, tambahkan lewat `--limit-pattern`.
 
+## Update tool
+
+Menu `[u]` membandingkan commit lokal dengan branch `main` di [Hyansz/gaspoll](https://github.com/Hyansz/gaspoll), lalu menawarkan pembaruan. Badge di samping versi pada menu utama menunjukkan keadaan terkini:
+
+| Badge | Arti |
+| ----- | ---- |
+| `[OK]` | Salinan lokal sama dengan GitHub (atau lebih baru). |
+| `[UPD]` | Ada commit baru di GitHub. Bila versi GitHub diketahui, tampil `v1.2.9 -> v1.2.10 [UPD]`. |
+| `[?]` | Belum diketahui: sedang memeriksa, jaringan gagal, atau folder bukan repo git. |
+
+Pemeriksaan berjalan di latar belakang paling sering sekali per jam, memakai `git ls-remote` bila tersedia dan GitHub API sebagai cadangan. Hasilnya disimpan di `results/update-state.json`, jadi jaringan tidak disentuh setiap kali menu digambar. Cek otomatis hanya aktif di terminal interaktif; matikan dengan `GASPOLL_UPDATE_OFF=1`.
+
+Pembaruan selalu manual. Setelah memilih `[u]`, layar menampilkan repo, branch, commit lokal, commit GitHub, dan jumlah berkas lokal yang berubah. Tekan `y` untuk menjalankan:
+
+```bash
+git pull origin main
+```
+
+Keluaran git ditampilkan langsung. Bila `package.json` ikut berubah, jalankan `npm install` (walaupun proyek ini tanpa dependensi, langkah itu aman); lalu keluar dan jalankan gaspoll lagi agar kode baru dipakai. Bila folder gaspoll bukan repo git (misalnya hasil unduh ZIP), perbarui manual dari halaman repo; menu akan menjelaskan hal ini, bukan menjalankan perintah yang gagal.
+
 ## Pemecahan masalah
 
 | Gejala | Penyebab dan solusi |
@@ -260,7 +286,7 @@ Provider yang sudah punya satu model lolos tidak pernah dilewati penuh. Jumlah m
 npm test
 ```
 
-Rangkaian tes (lebih dari 140 tes) mencakup alur menu, tata letak di berbagai lebar terminal, mode ASCII dan Unicode, diagnosis login, serta skenario error dari 9Router tiruan, termasuk perilaku failover guardian. Tes memakai folder hasil sementara, jadi data di `results/` tidak tersentuh.
+Rangkaian tes (lebih dari 160 tes) mencakup alur menu, tata letak di berbagai lebar terminal, mode ASCII dan Unicode, diagnosis login, badge cek update, serta skenario error dari 9Router tiruan, termasuk perilaku failover guardian. Tes memakai folder hasil sementara, jadi data di `results/` tidak tersentuh.
 
 ## Struktur proyek
 
@@ -271,6 +297,7 @@ gaspoll/
 │   ├── ui.js               # tampilan, warna, dan tata letak
 │   ├── lib.js              # fungsi bersama dan konfigurasi
 │   ├── guardian.js         # Realtime bot guardian (perantara dan layar live)
+│   ├── update.js           # cek update GitHub dan git pull dari menu [u]
 │   ├── paging.js           # paginasi tampilan riwayat
 │   ├── test-9router.js     # tes provider dan model
 │   ├── bench-9router.js    # benchmark agent coding

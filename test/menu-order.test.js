@@ -1,8 +1,8 @@
 'use strict';
 /**
  * Urutan menu utama: tombol 1-8 berurutan. Dua kolom: UTAMA berisi 1-4 dan ALAT berisi 5-8 (dibaca dari atas ke bawah),
- * lalu satu baris kosong, lalu [g] di kolom kiri dan [q] di kolom kanan.
- * Satu kolom (terminal sempit): UTAMA 1-4, lalu ALAT 5-8, lalu g dan q.
+ * lalu [u] di kolom kanan, lalu satu baris kosong, lalu [g] di kolom kiri dan [q] di kolom kanan.
+ * Satu kolom (terminal sempit): UTAMA 1-4, lalu ALAT 5-8, lalu u, g dan q.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -17,7 +17,7 @@ const menuLines = (width) => UI.renderMenu(data, { width, compact: true }).map(U
 function keyPositions(lines) {
   const pos = {};
   lines.forEach((l, row) => {
-    for (const m of l.matchAll(/\[(\d|g|q)\]/g)) {
+    for (const m of l.matchAll(/\[(\d|u|g|q)\]/g)) {
       if (!(m[1] in pos)) pos[m[1]] = { row, col: m.index };
     }
   });
@@ -38,9 +38,12 @@ for (const width of [80, 100]) {
     for (let i = 5; i < 8; i++) assert.ok(pos[String(i)].row < pos[String(i + 1)].row, `[${i}] harus di atas [${i + 1}]`);
     // baris yang sama: 1 dengan 5, 2 dengan 6, 3 dengan 7, 4 dengan 8
     for (let i = 1; i <= 4; i++) assert.strictEqual(pos[String(i)].row, pos[String(i + 4)].row, `[${i}] dan [${i + 4}] harus sebaris`);
-    // satu baris kosong, lalu [g] di kolom kiri dan [q] di kolom kanan (sejajar dengan [5]-[8])
-    assert.strictEqual(lines[pos['4'].row + 1].trim(), '', 'harus ada satu baris kosong setelah baris [4] dan [8]');
-    assert.strictEqual(pos.g.row, pos['4'].row + 2, '[g] harus tepat di bawah baris kosong');
+    // satu baris [u] di kolom kanan, lalu baris kosong, lalu [g] di kolom kiri dan [q] di kolom kanan
+    assert.strictEqual(pos.u.row, pos['4'].row + 1, '[u] harus tepat di bawah baris [4] dan [8]');
+    assert.ok(pos.u.col >= split, '[u] harus di kolom kanan');
+    assert.ok(lines[pos.u.row].includes('[u] Cek update tool'), 'label [u] Cek update tool harus tampil');
+    assert.strictEqual(lines[pos.u.row + 1].trim(), '', 'harus ada satu baris kosong setelah baris [u]');
+    assert.strictEqual(pos.g.row, pos.u.row + 2, '[g] harus tepat di bawah baris kosong');
     assert.strictEqual(pos.q.row, pos.g.row, '[g] dan [q] harus sebaris');
     assert.ok(pos.g.col < split, '[g] harus di kolom kiri');
     assert.strictEqual(pos.q.col, pos['5'].col, '[q] harus sejajar dengan kolom kanan ([5]-[8])');
@@ -49,17 +52,18 @@ for (const width of [80, 100]) {
   });
 }
 
-test('menu satu kolom (lebar 60): 1 sampai 8 berurutan, lalu g dan q, dengan judul UTAMA dan ALAT sekali saja', () => {
+test('menu satu kolom (lebar 60): 1 sampai 8 berurutan, lalu u, g dan q, dengan judul UTAMA dan ALAT sekali saja', () => {
   const lines = menuLines(60);
   const order = [];
-  lines.forEach((l) => { for (const m of l.matchAll(/\[(\d|g|q)\]/g)) order.push(m[1]); });
-  assert.deepStrictEqual(order.slice(0, 10), ['1', '2', '3', '4', '5', '6', '7', '8', 'g', 'q']);
+  lines.forEach((l) => { for (const m of l.matchAll(/\[(\d|u|g|q)\]/g)) order.push(m[1]); });
+  assert.deepStrictEqual(order.slice(0, 11), ['1', '2', '3', '4', '5', '6', '7', '8', 'u', 'g', 'q']);
   assert.strictEqual(lines.filter((l) => l.trim() === 'UTAMA').length, 1, 'judul UTAMA harus sekali dan sendirian');
   assert.strictEqual(lines.filter((l) => l.trim() === 'ALAT').length, 1, 'judul ALAT harus sekali dan sendirian');
   const iU = lines.findIndex((l) => l.trim() === 'UTAMA');
   const iA = lines.findIndex((l) => l.trim() === 'ALAT');
   const p = keyPositions(lines);
   assert.ok(iU < p['1'].row && p['4'].row < iA && iA < p['5'].row, 'tombol 1-4 di bawah UTAMA, 5-8 di bawah ALAT');
+  assert.ok(p['8'].row < p.u.row && p.u.row < p.g.row && p.g.row < p.q.row, 'urutan u, g, q setelah 8');
   lines.forEach((l) => assert.ok(UI.visualWidth(l) <= 60, `baris melebihi 60: ${l}`));
 });
 
@@ -68,7 +72,7 @@ test('label dan tombol menu tidak berubah (hanya urutan yang berubah)', () => {
   for (const label of [
     '[1] Tes provider & buat combo', '[2] Benchmark agent coding', '[3] Tes + benchmark berurutan',
     '[4] Lihat hasil terakhir', '[5] Buka folder hasil', '[6] Ulangi benchmark 1 provider',
-    '[7] Pengaturan', '[8] Realtime bot guardian', '[g] Riwayat & log', '[q] Keluar',
+    '[7] Pengaturan', '[8] Realtime bot guardian', '[u] Cek update tool', '[g] Riwayat & log', '[q] Keluar',
   ]) assert.ok(all.includes(label), `hilang: ${label}`);
-  assert.ok(all.includes('[1-8, g, q]'), 'prompt [1-8, g, q] harus tetap ada');
+  assert.ok(all.includes('[1-8, u, g, q]'), 'prompt [1-8, u, g, q] harus tetap ada');
 });

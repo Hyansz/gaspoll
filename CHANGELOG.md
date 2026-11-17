@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+## [1.2.10] - 2026-11-17
+- Menu `[u]` Cek update tool (juga menerima `9`, `update`, dan `/update`): layar menampilkan repo, branch, commit lokal, commit GitHub, versi, dan status, lalu menjalankan `git pull origin main` setelah konfirmasi `[y/N]`.
+- Badge update di samping versi pada tagline menu utama: `[OK]` (sama dengan GitHub), `[UPD]` (ada commit baru, plus `-> vX.Y.Z` bila versi GitHub diketahui), dan `[?]` (belum diketahui). ASCII murni, jadi aman di CMD.
+- Pemeriksaan latar belakang memakai `git ls-remote` dengan cadangan GitHub API, disimpan di `results/update-state.json`, dan dipakai ulang selama 60 menit. Cek otomatis hanya jalan di terminal interaktif; bisa diatur lewat `GASPOLL_UPDATE_INTERVAL_MS`, `GASPOLL_UPDATE_OFF`, `GASPOLL_UPDATE_CHECK`, dan `GASPOLL_GITHUB_TOKEN`.
+- Peringatan perubahan lokal sebelum pull, ringkasan berkas yang berubah, dan saran `npm install` serta muat ulang tool setelah pembaruan.
+- Pratinjau `--preview --scenario update` dan tes baru untuk badge, cache/TTL, deteksi update, serta sambungan menu.
+
 ## [1.2.9] - 2026-11-16
 - Tes provider (menu [1]) kini membaca penyebab gagal dari isi pesan error, bukan hanya angka status. Status asli yang dibungkus HTTP 503 oleh 9Router (mis. [429], [402]) dibaca dari body, jadi kuota habis tidak lagi berlabel RATE-LIMIT.
 - Kategori baru berteks Indonesia: tanpa kredensial, saldo habis, auth ditolak, kuota habis, rate limit, batasan paket, model dihentikan, model tidak ada, timeout, error server.

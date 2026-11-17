@@ -35,6 +35,7 @@ function renderAt(width, opts = {}) {
     alive: { ok: opts.offline ? false : true, baseUrl: opts.baseUrl || 'http://localhost:20128' },
     t: opts.noTest ? null : { tested_at: new Date(Date.now() - 2 * 3600e3).toISOString(), name: 'auto-combo', models: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
     b: opts.noBench ? null : { tested_at: new Date(Date.now() - 3 * 3600e3).toISOString() },
+    update: Object.prototype.hasOwnProperty.call(opts, 'update') ? opts.update : { state: 'ok' },
   };
   return UI2.renderMenu(data, { version: pkg.version, width });
 }
@@ -85,8 +86,8 @@ test('margin kiri 2 spasi pada semua baris berisi teks', () => {
 test('semua baris grid kolom kanan sejajar di kolom 38 (lebar 80)', () => {
   const lines = stripLines(renderAt(80));
   const rightCols = [];
-  // Kolom kanan berisi [5], [6], [7], [8]
-  for (const marker of ['[5]', '[6]', '[7]', '[8]']) {
+  // Kolom kanan berisi [5], [6], [7], [8], [u]
+  for (const marker of ['[5]', '[6]', '[7]', '[8]', '[u]']) {
     for (const l of lines) {
       const idx = l.indexOf(marker);
       if (idx > 0) rightCols.push(idx);
@@ -116,10 +117,10 @@ test('tepat satu kemunculan "Pilih" (prompt)', () => {
   assert.strictEqual(promptLines.length, 1, `Harapan 1 baris Pilih, dapat ${promptLines.length}: ${JSON.stringify(promptLines)}`);
 });
 
-test('prompt memuat "[1-8, g, q]"', () => {
+test('prompt memuat "[1-8, u, g, q]"', () => {
   const lines = stripLines(renderAt(80));
   const promptLine = lines[lines.length - 1];
-  assert.ok(promptLine.includes('[1-8, g, q]'), `Prompt harus memuat "[1-8, g, q]": ${promptLine}`);
+  assert.ok(promptLine.includes('[1-8, u, g, q]'), `Prompt harus memuat "[1-8, u, g, q]": ${promptLine}`);
 });
 
 test('banner ascii w=80: tepat 7 baris "#", lebar >= 60, tanpa ====, tanpa "GASPOLL" polos, char <= 126, tanpa asap', () => {
@@ -270,7 +271,7 @@ test('banner ascii w=80: semua karakter <= 126 dan tanpa asap', () => {
 test('lebar 60: menu satu kolom, semua item tampil', () => {
   const lines = stripLines(renderAt(60));
   const txt = lines.join('\n');
-  for (const item of ['[1]', '[2]', '[3]', '[4]', '[5]', '[6]', '[7]', '[8]', '[g]', '[q]']) {
+  for (const item of ['[1]', '[2]', '[3]', '[4]', '[5]', '[6]', '[7]', '[8]', '[u]', '[g]', '[q]']) {
     assert.ok(txt.includes(item), `Lebar 60: item ${item} tidak ditemukan`);
   }
 });

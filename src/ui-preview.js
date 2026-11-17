@@ -7,11 +7,12 @@
  *   node src/cli.js --preview --scenario offline
  *   node src/cli.js --preview --scenario no-key
  *   node src/cli.js --preview --scenario no-test
+ *   node src/cli.js --preview --scenario update
  *   node src/cli.js --preview --width 60
  *   node src/cli.js --preview --width 50
  *   node src/cli.js --preview --ascii
  *
- * Opsi: --scenario <offline|no-key|no-test|normal>, --width <n>, --ascii/--unicode.
+ * Opsi: --scenario <offline|no-key|no-test|update|normal>, --width <n>, --ascii/--unicode.
  * TIDAK memanggil router dan TIDAK menulis file hasil.
  */
 
@@ -38,12 +39,19 @@ if (hasFlag('unicode')) process.env.GASPOLL_UNICODE = '1';
 
 // ---------------------------------------------------------------- data palsu
 
+function bumpPatch(version) {
+  const m = String(version).match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return version;
+  return `${m[1]}.${m[2]}.${Number(m[3]) + 1}`;
+}
+
 function fakeData() {
   const base = {
     alive: { ok: true, baseUrl: 'http://localhost:20128', reason: '' },
     apiKey: 'sk-c1a2b3c4d5e6c181',
     t: { tested_at: new Date(Date.now() - 2 * 3600e3).toISOString(), name: 'auto-combo', models: 13 },
     b: { tested_at: new Date(Date.now() - 3 * 3600e3).toISOString() },
+    update: { state: 'ok', localVersion: pkg.version },
   };
   switch (scenario) {
     case 'offline':
@@ -52,6 +60,8 @@ function fakeData() {
       return { ...base, apiKey: '' };
     case 'no-test':
       return { ...base, t: null, b: null };
+    case 'update':
+      return { ...base, update: { state: 'update', localVersion: pkg.version, remoteVersion: bumpPatch(pkg.version) } };
     default:
       return base;
   }
@@ -79,6 +89,7 @@ function preview() {
     alive: data.alive,
     t: data.t,
     b: data.b,
+    update: data.update,
   }, { version: pkg.version, width: previewWidth || undefined });
   lines.forEach((ln) => L.line(ln));
 }

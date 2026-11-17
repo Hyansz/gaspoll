@@ -304,10 +304,10 @@ test('T8 alur (g lalu kembali ke menu lalu q)', async () => {
       const bannerMatches = cleanStdout.match(/\u2588{3,}/g) || [];
       assert.ok(bannerMatches.length >= 1, `Banner art harus muncul, dapat ${bannerMatches.length}`);
 
-      const promptMatches = cleanStdout.match(/Pilih \[1-8, g, q\]/g) || [];
+      const promptMatches = cleanStdout.match(/Pilih \[1-8, u, g, q\]/g) || [];
       assert.ok(promptMatches.length >= 2, `Prompt harus muncul >= 2 kali, dapat ${promptMatches.length}`);
 
-      const parts = cleanStdout.split('Pilih [1-8, g, q]');
+      const parts = cleanStdout.split('Pilih [1-8, u, g, q]');
       assert.ok(parts.length >= 3, 'Harus ada setidaknya 2 layar menu');
       const secondMenu = parts[1];
       assert.ok(secondMenu.includes('\u2588'), 'Menu kedua (render kedua) harus memuat banner art');

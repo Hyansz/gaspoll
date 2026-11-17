@@ -10,6 +10,7 @@ const cp = require('child_process');
 const readline = require('readline');
 const L = require('./lib');
 const UI = require('./ui');
+const UPDATE = require('./update');
 const { paginateViewLines } = require('./paging');
 const { col } = L;
 
@@ -209,7 +210,7 @@ function returnToMenu() {
   L.clearScreen();
 }
 
-async function finishAction(actionName, code, startTime) {
+async function finishAction(actionName, code, startTime, overrideSummary) {
   const dur = Date.now() - startTime;
   const success = code === 0;
   const s = UI.sym();
@@ -246,6 +247,9 @@ async function finishAction(actionName, code, startTime) {
       }
     }
   }
+
+  // Ringkasan khusus (mis. hasil git pull) menggantikan tebakan dari last-run.json.
+  if (overrideSummary) summaryText = overrideSummary;
 
   L.line('');
   L.line(`  ${icon}  ${actionName}: ${summaryText}`);
@@ -359,6 +363,136 @@ async function actionGuardian() {
   const t0 = Date.now();
   const code = await runScript(GUARD, []);
   await finishAction('Realtime bot guardian', code, t0);
+}
+
+// ---------------------------------------------------------------- layar Cek update tool [u]
+// Pemeriksaan dan cache ada di update.js. Menu hanya menampilkan hasil dan
+// menjalankan "git pull origin <branch>" setelah pengguna menyetujui.
+
+function shortHash(h) {
+  return String(h || '').slice(0, 7);
+}
+
+function updateRow(label, value) {
+  L.line('  ' + col.dim(UI.padTo(label, 16)) + (value || '-'));
+}
+
+function updateSummary(u) {
+  switch (u && u.state) {
+    case 'ok': return `sudah versi terbaru (v${String(u.localVersion || '').replace(/^v/, '')})`;
+    case 'update': return u.remoteVersion ? `update tersedia (GitHub v${String(u.remoteVersion).replace(/^v/, '')})` : 'update tersedia';
+    case 'ahead': return 'salinan lokal lebih baru dari GitHub';
+    case 'no-git': return 'folder ini bukan repo git, perbarui manual';
+    default: return (u && u.error) ? u.error : 'status belum diketahui';
+  }
+}
+
+function drawUpdateHeader() {
+  const s = UI.sym();
+  L.line('');
+  L.line('  ' + col.bold('CEK UPDATE TOOL'));
+  L.line('  ' + col.dim(s.dash.repeat(60)));
+}
+
+async function actionUpdate() {
+  L.clearScreen();
+  const t0 = Date.now();
+  drawUpdateHeader();
+  L.line(col.dim('  Menghubungi GitHub...'));
+
+  const u = await UPDATE.checkNow();
+
+  // Gambar ulang supaya tulisan "Menghubungi GitHub..." tidak tertinggal.
+  L.clearScreen();
+  drawUpdateHeader();
+
+  const branch = u.branch || UPDATE.DEFAULT_BRANCH;
+  const version = String(u.localVersion || '').replace(/^v/, '');
+  const remoteV = String(u.remoteVersion || '').replace(/^v/, '');
+  const b = UI.updateBadge(u);
+  const badgeText = b.tone === 'update' ? col.yellow(b.text) : (b.tone === 'ok' ? col.green(b.text) : col.dim(b.text));
+
+  updateRow('Repo', u.slug || UPDATE.DEFAULT_SLUG);
+  updateRow('Branch', branch);
+  updateRow('Folder', u.repoDir || UPDATE.ROOT);
+  updateRow('Commit lokal', u.localHash ? `${shortHash(u.localHash)}${u.localDate ? '  ' + u.localDate : ''}` : '-');
+  updateRow('Commit GitHub', u.remoteHash
+    ? `${shortHash(u.remoteHash)}${u.remoteDate ? '  ' + u.remoteDate : ''}${u.via ? '  (' + u.via + ')' : ''}`
+    : '-');
+  updateRow('Versi', `lokal v${version}${remoteV ? '  ->  GitHub v' + remoteV : ''}`);
+  updateRow('Status', badgeText + '  ' + updateSummary(u));
+  if (u.dirty > 0) {
+    updateRow('Perubahan lokal', col.yellow(`${u.dirty} berkas berubah (belum di-commit)`));
+  }
+  L.line('');
+
+  if (u.state === 'update') {
+    if (u.dirty > 0) {
+      L.line(col.yellow('  [!] Ada perubahan lokal yang belum disimpan.'));
+      L.line(col.dim('      git pull bisa gagal atau bentrok. Commit dulu, atau simpan dengan git stash.'));
+      L.line('');
+    }
+    const ans = await ask(promptPrefix() + col.dim('Perbarui sekarang? [y/N]: '));
+    if (!/^y(es)?$/i.test(String(ans || '').trim())) {
+      await finishAction('Cek update tool', 0, t0, 'dibatalkan pengguna');
+      return;
+    }
+    L.line('');
+    L.line(col.dim(`  Menjalankan: git pull origin ${branch}`));
+    L.line('');
+    const res = await UPDATE.pullNow();
+    L.line('');
+    if (!res.ok) {
+      const why = res.error ? `: ${res.error}` : '';
+      await finishAction('Update tool', 1, t0, `git pull gagal${why}`);
+      return;
+    }
+    if (!res.updated) {
+      await finishAction('Update tool', 0, t0, 'tidak ada perubahan baru');
+      return;
+    }
+    const files = res.changed || [];
+    const pkgChanged = files.some((f) => /(^|\/)package(-lock)?\.json$/i.test(f));
+    let summary = `diperbarui ${shortHash(res.before)} -> ${shortHash(res.after)} (${files.length} berkas)`;
+    L.line(col.green(`  [+] Berkas diperbarui: ${files.length}`));
+    files.slice(0, 10).forEach((f) => L.line(col.dim('      ' + f)));
+    if (files.length > 10) L.line(col.dim(`      ... dan ${files.length - 10} berkas lain`));
+    L.line('');
+    if (pkgChanged) {
+      L.line(col.yellow('  [!] package.json berubah. Jalankan: npm install'));
+      summary += '; perlu npm install';
+    }
+    L.line(col.yellow('  [!] Muat ulang tool: keluar lalu jalankan gaspoll lagi.'));
+
+    // Tandai cache sudah terbaru supaya badge menu langsung [OK] tanpa jaringan lagi.
+    try {
+      UPDATE.writeCache({
+        ...(UPDATE.readCache() || {}),
+        state: 'ok',
+        checkedAt: Date.now(),
+        localHash: res.after,
+        remoteHash: res.after,
+        localVersion: UPDATE.localVersion(),
+        remoteVersion: UPDATE.localVersion(),
+        error: '',
+      });
+    } catch {}
+
+    await finishAction('Update tool', 0, t0, summary);
+    return;
+  }
+
+  if (u.state === 'ok') {
+    L.line(col.green('  Tidak ada pembaruan.'));
+  } else if (u.state === 'ahead') {
+    L.line(col.green('  Salinan lokal sama atau lebih baru dari GitHub.'));
+  } else {
+    L.line(col.yellow('  [!] Status update tidak diketahui.'));
+    L.line(col.dim(`      Coba lagi nanti, atau perbarui manual dari https://github.com/${u.slug || UPDATE.DEFAULT_SLUG}`));
+    if (u.error) L.line(col.dim('      ' + u.error));
+  }
+  L.line('');
+  await finishAction('Cek update tool', 0, t0, updateSummary(u));
 }
 
 async function actionRetest() {
@@ -670,7 +804,11 @@ async function main() {
   }
 
   for (;;) {
-    const alive = await L.checkRouter(cfg, 2500);
+    // Cek router dan status update bersamaan supaya menu tidak makin lambat.
+    const [alive, update] = await Promise.all([
+      L.checkRouter(cfg, 2500),
+      UPDATE.getStatus({ waitIfMissing: true }),
+    ]);
     const t = readJson('combo-auto-combo.json');
     const b = readJson('bench-results.json');
     const data = {
@@ -679,6 +817,7 @@ async function main() {
       alive,
       t,
       b,
+      update,
     };
     const lines = UI.renderMenu(data, { version: pkg.version });
     lines.slice(0, lines.length - 1).forEach((ln) => L.line(ln));
@@ -705,9 +844,11 @@ async function main() {
     else if (k === '6') await actionRetest();
     else if (k === '7') await actionSettings();
     else if (k === '8') await actionGuardian();
+    else if (k === 'u' || k === '9' || k === 'update' || k === '/update') await actionUpdate();
     else if (k === 'g' || k === 'l') await actionHistory();
-    else if (k) L.line(UI.c.gray(`  Pilihan "${ans}" tidak dikenal. Ketik 1-8, g, atau q.`));
+    else if (k) L.line(UI.c.gray(`  Pilihan "${ans}" tidak dikenal. Ketik 1-8, u, g, atau q.`));
   }
+  UPDATE.cancel();
   L.line('  Sampai jumpa.');
 }
 

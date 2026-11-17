@@ -72,13 +72,13 @@ function runFlowStaged(lines, envExtra = {}, { idleMs = 400, stallMs = 6000, tot
 test('flow ASCII: cek >', () => {
   const { res } = runFlowFull('q\n', { GASPOLL_ASCII: '1' });
   assert.strictEqual(res.status, 0);
-  assert.ok(stripAnsi(res.stdout).includes('Pilih [1-8, g, q] >'));
+  assert.ok(stripAnsi(res.stdout).includes('Pilih [1-8, u, g, q] >'));
 });
 
 test('flow a: q langsung', () => {
   const { res } = runFlowFull('q\n');
   assert.strictEqual(res.status, 0);
-  assert.ok(stripAnsi(res.stdout).includes('Pilih [1-8, g, q] ›'));
+  assert.ok(stripAnsi(res.stdout).includes('Pilih [1-8, u, g, q] ›'));
 });
 
 test('flow b: g lalu Enter lalu q', () => {
@@ -88,7 +88,7 @@ test('flow b: g lalu Enter lalu q', () => {
   const parts = res.stdout.split('\x1b[2J');
   const lastPart = parts[parts.length - 1];
   assert.ok(!stripAnsi(lastPart).includes('RIWAYAT & LOG'), 'Riwayat masih muncul setelah clear terakhir');
-  assert.ok(stripAnsi(lastPart).includes('Pilih [1-8, g, q] ›'));
+  assert.ok(stripAnsi(lastPart).includes('Pilih [1-8, u, g, q] ›'));
 });
 
 test('flow c: g lalu b lalu q', () => {
